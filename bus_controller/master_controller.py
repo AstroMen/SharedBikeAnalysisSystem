@@ -9,4 +9,7 @@ class MasterController:
         self.__spark = spark
 
     def trip_handler(self):
-        TripController(self.__spark)
+        trip_ctl = TripController(self.__spark)
+        trip_ctl.build_rdd()
+        trip_ctl.clean_data()
+        trip_ctl.ctor()

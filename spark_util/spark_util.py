@@ -1,6 +1,7 @@
 import os
 from pyspark.sql import SparkSession
 from pyspark import SparkConf, SparkContext
+from common.Logger import logger
 
 
 java8_location = '/usr/local/Cellar/openjdk@11/11.0.12/libexec/openjdk.jdk/Contents/Home'
@@ -21,22 +22,33 @@ class SparkUtil:
             .setMaster(conn)
 
     def build_spark_session(self, app_name: str) -> SparkSession:
+        logger.info('Build spark session ...')
         self.__build_spark_conf()
         self.__ssession = SparkSession\
             .builder \
             .config(conf=self.__sconf) \
             .appName(app_name) \
-            .master("local") \
+            .master("local[*]") \
             .getOrCreate()
             # .enableHiveSupport() \
+        self.__ssession.sparkContext.setLogLevel("INFO")
         return self.__ssession
 
     def build_spark_context(self, is_local=True, thread=1, is_standalone=False, host=None, port=0) -> SparkContext:
+        logger.info('Build spark context ...')
         conn = "local[{}]".format(thread) if is_local and not is_standalone else "spark://{}:{}".format(host, port)
         print(conn)
         self.__build_spark_conf(conn=conn)
         self.__scontext = SparkContext(conf=self.__sconf)
         return self.__scontext
+
+    def get_tb_from_mysql(self, ip, db_name, tb_name, user_name, pwd, port=3306):
+        if self.__ssession is None:
+            logger.warn('get_tb_from_mysql: session does not exist.')
+            return None
+        df_jdbc = self.__ssession.read.jdbc(url="jdbc:mysql://{}:{}/{}".format(ip, port, db_name),
+                                  table=tb_name, properties={'user': user_name, 'password': pwd})
+        return df_jdbc
 
     def stop_session(self):
         self.__ssession.stop()

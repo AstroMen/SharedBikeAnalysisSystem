@@ -26,7 +26,6 @@ if __name__ == '__main__':
     master.trip_handler()
 
 
-
     # db_names = spark.sql("show databases").collect()
     # tbs_schema = spark.sql("show tables from default;")
     # tbs_schema.show()
