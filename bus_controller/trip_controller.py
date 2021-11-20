@@ -76,7 +76,7 @@ class TripController:
             '''
             cache():
                 call persist(), persist() call persist(StorageLevel.MEMORY_ONLY)
-                with the default storage level (MEMORY_AND_DISK)
+                Persists the DataFrame with the default storage level (MEMORY_AND_DISK).
             '''
         logger.info('Finishing read trips data, total of files: {}.'.format(len(self.__trips_dfs)))
 
@@ -86,8 +86,9 @@ class TripController:
             return
 
         for k, df in self.__trips_dfs.items():
-            logger.info("Processing trip data: {} ...".format(k))
-            self.__trips_dfs[k] = df.withColumn("used_date", self.__udf_get_date("start_time")) \
+            logger.info("Processing trip data: {}, lines={} ...".format(k, df.count()))
+            self.__trips_dfs[k] = df.na.drop(subset=["start_lat", "start_lon", "end_lat", "end_lon"]) \
+                .withColumn("used_date", self.__udf_get_date("start_time")) \
                 .withColumn("season", self.__udf_get_season("used_date")) \
                 .withColumn("holiday", self.__udf_get_holiday("used_date")) \
                 .withColumn("workingday", self.__udf_get_workingday("used_date")) \
@@ -96,11 +97,12 @@ class TripController:
                 .withColumn("distance", self.__udf_cal_dist_by_lat_lon("start_lat", "start_lon", "end_lat", "end_lon")) \
                 .withColumn("distance_cal", self.__udf_cal_dist_by_lat_lon_cal("start_lat", "start_lon", "end_lat", "end_lon"))
             # .cast(DateType()) # .drop('col_name')
+            logger.info("Processing trip data: {}, lines={} ...".format(k, self.__trips_dfs[k].count()))
 
             test = self.__trips_total_df
             test2 = self.__trips_dfs[k]
-            self.__trips_total_df.unionAll(self.__trips_dfs[k])
-            logger.info("Processing trip data {}: total size {} ...".format(k, self.__trips_total_df.count()))
+            # self.__trips_total_df.unionAll(self.__trips_dfs[k])
+            logger.info("Processing trip data {}: total size={} ...".format(k, self.__trips_total_df.count()))
 
             # self.__trips_dfs[k].write.csv("./results/trips_{}".format(k), encoding="utf-8", header=True)
 
