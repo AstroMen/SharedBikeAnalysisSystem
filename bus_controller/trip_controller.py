@@ -137,7 +137,7 @@ class TripController:
         # print(TRIP_SCHEMA.simpleString())
 
     def stat_basic(self, df):
-        print(df.describe().show())
+        df.describe().show()
 
     def countplot_by_category(self):
         fig, axes = plt.subplots(nrows=3, ncols=0)
