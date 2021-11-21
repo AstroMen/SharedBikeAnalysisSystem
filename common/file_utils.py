@@ -104,3 +104,16 @@ class FileUtils:
                 ori_f_name, ori_f_ext = os.path.splitext(filename_with_ext)
                 file_list.append(ori_f_name)
         return file_list
+
+    @staticmethod
+    def remove_folder(path, is_include_self=True):
+        path = FileUtils.normalize_path(path)
+        ls = os.listdir(path)
+        for i in ls:
+            c_path = os.path.join(path, i)
+            if os.path.isdir(c_path):
+                FileUtils.remove_folder(c_path)
+            else:
+                os.remove(c_path)
+        if is_include_self:
+            os.rmdir(path)

@@ -1,16 +1,20 @@
 import re
+from imp import reload
+
 import matplotlib.pyplot as plt
 import pyspark.sql.dataframe
 import seaborn as sns
 from pyspark.sql.types import *
-from pyspark.sql.functions import udf, col
+from pyspark.sql.functions import udf
+# from pyspark.sql.functions import *
+from pyspark.sql import functions as pyspark_func
 from common.file_utils import FileUtils
 from common.time_utils import TimeUtils
 from common.geo_utils import GeoUtils
 from Logger import logger
 
 
-DATA_FLODER_NAME = 'data_test'
+TRIPS_FNAME_PREFIX = 'metro-trips-'
 
 TRIP_SCHEMA = StructType([
     StructField('trip_id', IntegerType(), False),
@@ -32,19 +36,19 @@ TRIP_SCHEMA = StructType([
 
 
 class TripController:
-    def __init__(self, spark):
+    def __init__(self, spark, data_folder_name):
         logger.info("Initiating trip controller ...")
 
         self.__spark = spark
+        self.__data_folder_name = data_folder_name
         self.init_udf()
 
         # Get data files name
-        files_name = FileUtils.get_file_list_under_dir(DATA_FLODER_NAME)
+        files_name = FileUtils.get_file_list_under_dir(self.__data_folder_name)
         # Filter files name start with "metro-trips"
-        trips_fname_prefix = 'metro-trips-'
-        self.__trips_files_name = list(filter(lambda x: x.startswith(trips_fname_prefix), files_name))
+        self.__trips_files_name = list(filter(lambda x: x.startswith(TRIPS_FNAME_PREFIX), files_name))
         self.__trips_dfs = dict()
-        self.__trips_total_df = None
+        self.trips_total_df = None
 
     def init_udf(self):
         self.__udf_get_date = udf(lambda x: x.split(' ')[0] if ' ' in x else x, StringType())  # udf(TripUdf.get_date, StringType())
@@ -58,21 +62,22 @@ class TripController:
     def build_rdd(self):
         logger.info("Building trip RDD ...")
         # Build total RDD schema
-        self.__trips_total_df = self.__spark.createDataFrame(self.__spark.sparkContext.emptyRDD(),
-                                                             TRIP_SCHEMA.add(StructField('used_date', StringType(), True))
-                                                             .add(StructField('season', IntegerType(), True))
-                                                             .add(StructField('holiday', IntegerType(), True))
-                                                             .add(StructField('workingday', IntegerType(), True))
-                                                             .add(StructField('start_datetime', TimestampType(), True))
-                                                             .add(StructField('end_datetime', TimestampType(), True))
-                                                             .add(StructField('distance', FloatType(), True))
-                                                             .add(StructField('distance_cal', FloatType(), True)))
+        self.trips_total_df = self.__spark.createDataFrame(self.__spark.sparkContext.emptyRDD(), TRIP_SCHEMA
+                                                           .add(StructField('distance', FloatType(), True))
+                                                           .add(StructField('distance_cal', FloatType(), True))
+                                                           .add(StructField('used_date', StringType(), True))
+                                                           .add(StructField('season', IntegerType(), True))
+                                                           .add(StructField('holiday', IntegerType(), True))
+                                                           .add(StructField('workingday', IntegerType(), True))
+                                                           .add(StructField('start_datetime', TimestampType(), True))
+                                                           .add(StructField('end_datetime', TimestampType(), True)))\
+            .withColumnRenamed('trip_route_category', 'trip_route_type')
 
         # Spark read csv
         for file_name in self.__trips_files_name:
             trip_date = re.match(r'.*(\d{4}-q\d{1}).*', file_name).group(1)
             self.__trips_dfs[trip_date] = self.__spark.read.options(header='True', inferSchema='True', delimiter=',').schema(
-                TRIP_SCHEMA).csv("{}/{}.csv".format(DATA_FLODER_NAME, file_name)).cache()
+                TRIP_SCHEMA).csv("{}/{}.csv".format(self.__data_folder_name, file_name)).cache()
             '''
             cache():
                 call persist(), persist() call persist(StorageLevel.MEMORY_ONLY)
@@ -88,37 +93,51 @@ class TripController:
         for k, df in self.__trips_dfs.items():
             logger.info("Processing trip data: {}, lines={} ...".format(k, df.count()))
             self.__trips_dfs[k] = df.na.drop(subset=["start_lat", "start_lon", "end_lat", "end_lon"]) \
+                .withColumn("distance", self.__udf_cal_dist_by_lat_lon("start_lat", "start_lon", "end_lat", "end_lon")) \
+                .withColumn("distance_cal", self.__udf_cal_dist_by_lat_lon_cal("start_lat", "start_lon", "end_lat", "end_lon")) \
                 .withColumn("used_date", self.__udf_get_date("start_time")) \
                 .withColumn("season", self.__udf_get_season("used_date")) \
                 .withColumn("holiday", self.__udf_get_holiday("used_date")) \
                 .withColumn("workingday", self.__udf_get_workingday("used_date")) \
                 .withColumn("start_datetime", self.__udf_format_time_to_datetime("start_time")) \
                 .withColumn("end_datetime", self.__udf_format_time_to_datetime("end_time")) \
-                .withColumn("distance", self.__udf_cal_dist_by_lat_lon("start_lat", "start_lon", "end_lat", "end_lon")) \
-                .withColumn("distance_cal", self.__udf_cal_dist_by_lat_lon_cal("start_lat", "start_lon", "end_lat", "end_lon"))
-            # .cast(DateType()) # .drop('col_name')
-            logger.info("Processing trip data: {}, lines={} ...".format(k, self.__trips_dfs[k].count()))
+                .withColumn("trip_route_category", pyspark_func.when(df.trip_route_category == 'One Way', 1).when(df.trip_route_category == 'Round Trip', 2)) \
+                .withColumn("passholder_type", pyspark_func.when(df.passholder_type == 'Walk-up', 1).when(df.passholder_type == 'One Day Pass', 2)
+                            .when(df.passholder_type == 'Monthly Pass', 3).when(df.passholder_type == 'Annual Pass', 4)) \
+                .withColumn("bike_type", pyspark_func.when(df.bike_type == 'standard', 1).when(df.bike_type == 'electric', 2)
+                            .when(df.bike_type == 'smart', 3)) \
+                .withColumnRenamed('trip_route_category', 'trip_route_type')
+            # .filter("distance != 0.0") \  ### cannot filter because round-trip have the same start and end stations
+            # .cast(DateType()) # .drop('col_name') # .filter(df.distance != 0.0)
+            logger.info("Processing trip data success: {}, lines={} ...".format(k, self.__trips_dfs[k].count()))
 
-            test = self.__trips_total_df
-            test2 = self.__trips_dfs[k]
-            # self.__trips_total_df.unionAll(self.__trips_dfs[k])
-            logger.info("Processing trip data {}: total size={} ...".format(k, self.__trips_total_df.count()))
+            trip_df_block = self.__trips_dfs[k]
+            self.trips_total_df = self.trips_total_df.unionAll(trip_df_block)
+            logger.info("Processing trip data {}: total size={} ...".format(k, self.trips_total_df.count()))
 
-            # self.__trips_dfs[k].write.csv("./results/trips_{}".format(k), encoding="utf-8", header=True)
+        logger.info('Trip total RDD schema:')
+        self.print_schema(self.trips_total_df)
+        logger.info('Trip total RDD data:')
+        self.trips_total_df.show(truncate=True)
 
-        # self.__trips_dfs['2021-q1'].show(truncate=True)
-        self.print_schema()
-        self.__trips_total_df.show()
-        # self.__trips_total_df.repartition(1).write.csv("./results/trips", encoding="utf-8", header=True)
+    def exp_total_to_csv(self):
+        logger.info('Export total trip data to csv')
+        try:
+            export_csv_path = 'results/trips'
+            if FileUtils.path_exists(export_csv_path):
+                FileUtils.remove_folder(export_csv_path)
+            self.trips_total_df.repartition(1).write.csv(export_csv_path, encoding="utf-8", header=True)
+        except pyspark.sql.utils.AnalysisException as e:
+            logger.error('Trip export csv error: {}'.format(e))
 
-    def print_schema(self):
-        self.__trips_dfs['2021-q1'].printSchema()
+    def print_schema(self, df):
+        df.printSchema()
         # print(self.__trips_dfs['2021-q1'].schema)
         # print('Tables: {}'.format(spark.catalog.listTables()))
         # print(TRIP_SCHEMA.simpleString())
 
-    def stat_basic(self):
-        print(self.__trips_dfs['2021-q1'].describe().show())
+    def stat_basic(self, df):
+        print(df.describe().show())
 
     def countplot_by_category(self):
         fig, axes = plt.subplots(nrows=3, ncols=0)
@@ -131,14 +150,13 @@ class TripController:
 
     def ctor(self):
         self.__trips_dfs = None
-        self.__trips_total_df = None
+        self.trips_total_df = None
 
 
 class TripUdf:
     @staticmethod
     def get_date(time_str: str) -> str:
         date_str, time_str = time_str.split(' ')
-        # month_str, day_str, year_str = time_str.split(' ')[0].split('/')
         return date_str
 
     @staticmethod

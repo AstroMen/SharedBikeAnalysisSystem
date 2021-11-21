@@ -24,7 +24,7 @@ if __name__ == '__main__':
     # Initailize trip
     master = MasterController(spark)
     master.trip_handler()
-
+    master.statistics()
 
     # db_names = spark.sql("show databases").collect()
     # tbs_schema = spark.sql("show tables from default;")
@@ -38,4 +38,4 @@ if __name__ == '__main__':
     # sum = lines.reduce(lambda x, y: x + y)
     # print('元素总和为： ', sum)
 
-    spark.stop()
+    master.ctor()

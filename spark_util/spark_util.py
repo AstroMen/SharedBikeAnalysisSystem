@@ -31,7 +31,7 @@ class SparkUtil:
             .master("local[*]") \
             .getOrCreate()
             # .enableHiveSupport() \
-        self.__ssession.sparkContext.setLogLevel("INFO")
+        self.__ssession.sparkContext.setLogLevel("ERROR")
         return self.__ssession
 
     def build_spark_context(self, is_local=True, thread=1, is_standalone=False, host=None, port=0) -> SparkContext:
