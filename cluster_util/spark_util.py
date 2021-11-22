@@ -24,13 +24,12 @@ class SparkUtil:
     def build_spark_session(self, app_name: str) -> SparkSession:
         logger.info('Build spark session ...')
         self.__build_spark_conf()
-        self.__ssession = SparkSession\
-            .builder \
+        self.__ssession = SparkSession.builder\
             .config(conf=self.__sconf) \
             .appName(app_name) \
             .master("local[*]") \
+            .enableHiveSupport() \
             .getOrCreate()
-            # .enableHiveSupport() \
         self.__ssession.sparkContext.setLogLevel("ERROR")
         return self.__ssession
 

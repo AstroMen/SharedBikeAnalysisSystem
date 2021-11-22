@@ -23,5 +23,5 @@ class ChartUtil:
 
         pd_df = data_list.toPandas()
         for i in range(len(x)):
-            sns.countplot(data=pd_df, x=x[i], ax=axes[int(i/2)][i%2])
+            sns.countplot(data=pd_df, x=x[i], ax=axes[i%2][int(i/2)])
             plt.show()

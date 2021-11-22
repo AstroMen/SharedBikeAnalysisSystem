@@ -3,7 +3,8 @@
 # Press ⌃R to execute it or replace it with your code.
 # Press Double ⇧ to search everywhere for classes, files, tool windows, actions, and settings.
 import re
-from spark_util.spark_util import SparkUtil
+from cluster_util.spark_util import SparkUtil
+from cluster_util.hive_util import HiveUtil
 from bus_controller.master_controller import MasterController
 from Logger import logger
 
@@ -20,9 +21,15 @@ if __name__ == '__main__':
     # Initailize spark session
     logger.info('Connecting spark session ...')
     spark = SparkUtil().build_spark_session(app_name="Shared Bike Analysis System")  # is_standalone=True, host="master", port=7077
+    hive = None
+    # hive = HiveUtil().build_hive_context(spark)
+    # if spark is None or hive is None:
+    #     logger.error('Cluster connection fail.')
+    #     exit(0)
 
     # Initailize trip
-    master = MasterController(spark)
+    master = MasterController(spark, hive=hive)
+    master.init_dw()
     master.trip_handler()
     master.statistics()
 

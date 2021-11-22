@@ -11,6 +11,7 @@ from pyspark.sql import functions as pyspark_func
 from common.file_utils import FileUtils
 from common.time_utils import TimeUtils
 from common.geo_utils import GeoUtils
+from cluster_util.hive_util import HiveUtil
 from Logger import logger
 
 
@@ -36,10 +37,11 @@ TRIP_SCHEMA = StructType([
 
 
 class TripController:
-    def __init__(self, spark, data_folder_name):
+    def __init__(self, spark, hive, data_folder_name):
         logger.info("Initiating trip controller ...")
 
         self.__spark = spark
+        self.__hive = hive
         self.__data_folder_name = data_folder_name
         self.init_udf()
 
@@ -49,23 +51,13 @@ class TripController:
         self.__trips_files_name = list(filter(lambda x: x.startswith(TRIPS_FNAME_PREFIX), files_name))
         self.__trips_dfs = dict()
         self.trips_total_df = None
-
-    def init_udf(self):
-        self.__udf_get_date = udf(lambda x: x.split(' ')[0] if ' ' in x else x, StringType())  # udf(TripUdf.get_date, StringType())
-        self.__udf_format_time_to_datetime = udf(TripUdf.format_time_to_datetime, TimestampType())
-        self.__udf_get_season = udf(TripUdf.get_season, IntegerType())
-        self.__udf_get_holiday = udf(TripUdf.get_holiday, IntegerType())
-        self.__udf_get_workingday = udf(TripUdf.get_workingday, IntegerType())
-        self.__udf_cal_dist_by_lat_lon = udf(TripUdf.cal_dist_by_lat_lon, FloatType())
-        self.__udf_cal_dist_by_lat_lon_cal = udf(TripUdf.cal_dist_by_lat_lon_cal, FloatType())
-
-    def build_rdd(self):
-        logger.info("Building trip RDD ...")
+        self.__ptd = list()
         # Build total RDD schema
         self.trips_total_df = self.__spark.createDataFrame(self.__spark.sparkContext.emptyRDD(), TRIP_SCHEMA
                                                            .add(StructField('distance', FloatType(), True))
                                                            .add(StructField('distance_cal', FloatType(), True))
                                                            .add(StructField('used_date', StringType(), True))
+                                                           .add(StructField('ptd', StringType(), True))
                                                            .add(StructField('season', IntegerType(), True))
                                                            .add(StructField('holiday', IntegerType(), True))
                                                            .add(StructField('workingday', IntegerType(), True))
@@ -73,8 +65,21 @@ class TripController:
                                                            .add(StructField('end_datetime', TimestampType(), True)))\
             .withColumnRenamed('trip_route_category', 'trip_route_type')
 
+    def init_udf(self):
+        self.__udf_get_date = udf(lambda x: x.split(' ')[0] if ' ' in x else x, StringType())  # udf(TripUdf.get_date, StringType())
+        self.__udf_get_year = udf(lambda x: x.split('/')[2] if '/' in x else 'UnknownYear', StringType())  # udf(TripUdf.get_date, StringType())
+        self.__udf_format_time_to_datetime = udf(TripUdf.format_time_to_datetime, TimestampType())
+        self.__udf_get_season = udf(TripUdf.get_season, IntegerType())
+        self.__udf_get_holiday = udf(TripUdf.get_holiday, IntegerType())
+        self.__udf_get_workingday = udf(TripUdf.get_workingday, IntegerType())
+        self.__udf_cal_dist_by_lat_lon = udf(TripUdf.cal_dist_by_lat_lon, FloatType())
+        self.__udf_cal_dist_by_lat_lon_cal = udf(TripUdf.cal_dist_by_lat_lon_cal, FloatType())
+
+    def build_ods(self):
+        logger.info("Building trip ODS ...")
         # Spark read csv
         for file_name in self.__trips_files_name:
+            logger.info('Reading file {} ...'.format(file_name))
             trip_date = re.match(r'.*(\d{4}-q\d{1}).*', file_name).group(1)
             self.__trips_dfs[trip_date] = self.__spark.read.options(header='True', inferSchema='True', delimiter=',').schema(
                 TRIP_SCHEMA).csv("{}/{}.csv".format(self.__data_folder_name, file_name)).cache()
@@ -83,44 +88,76 @@ class TripController:
                 call persist(), persist() call persist(StorageLevel.MEMORY_ONLY)
                 Persists the DataFrame with the default storage level (MEMORY_AND_DISK).
             '''
-        logger.info('Finishing read trips data, total of files: {}.'.format(len(self.__trips_dfs)))
 
-    def clean_data(self):
-        logger.info("Cleaning trip data ...")
-        if len(self.__trips_dfs) == 0:
+            self.clean_ods_data(trip_date, self.__trips_dfs[trip_date])
+
+            self.__trips_dfs[trip_date].show()
+
+            self.import_hive(self.__trips_dfs[trip_date], trip_date.split('-')[0], 'tmp_{}'.format(trip_date.replace('-', '_')))
+
+
+        # trip_df_block = self.__trips_dfs[k]
+        # self.trips_total_df = self.trips_total_df.unionAll(trip_df_block)
+        # logger.info("Processing trip data {}: total size={} ...".format(k, self.trips_total_df.count()))
+        #
+        # logger.info('Trip total RDD schema:')
+        # self.print_schema(self.trips_total_df)
+        # logger.info('Trip total RDD data:')
+        # self.trips_total_df.show(truncate=True)
+
+        logger.info('Finishing build odf for trips data, total of files: {}.'.format(len(self.__trips_dfs)))
+
+    def clean_ods_data(self, k, df):
+        logger.info("Cleaning trip data: {} ...".format(k))
+        if df.count() == 0:
             return
 
-        for k, df in self.__trips_dfs.items():
-            logger.info("Processing trip data: {}, lines={} ...".format(k, df.count()))
-            self.__trips_dfs[k] = df.na.drop(subset=["start_lat", "start_lon", "end_lat", "end_lon"]) \
-                .withColumn("distance", self.__udf_cal_dist_by_lat_lon("start_lat", "start_lon", "end_lat", "end_lon")) \
-                .withColumn("distance_cal", self.__udf_cal_dist_by_lat_lon_cal("start_lat", "start_lon", "end_lat", "end_lon")) \
-                .withColumn("used_date", self.__udf_get_date("start_time")) \
-                .withColumn("season", self.__udf_get_season("used_date")) \
-                .withColumn("holiday", self.__udf_get_holiday("used_date")) \
-                .withColumn("workingday", self.__udf_get_workingday("used_date")) \
-                .withColumn("start_datetime", self.__udf_format_time_to_datetime("start_time")) \
-                .withColumn("end_datetime", self.__udf_format_time_to_datetime("end_time")) \
-                .withColumn("trip_route_category", pyspark_func.when(df.trip_route_category == 'One Way', 1).when(df.trip_route_category == 'Round Trip', 2)) \
-                .withColumn("passholder_type", pyspark_func.when(df.passholder_type == 'Walk-up', 1).when(df.passholder_type == 'One Day Pass', 2)
-                            .when(df.passholder_type == 'Monthly Pass', 3).when(df.passholder_type == 'Annual Pass', 4)) \
-                .withColumn("bike_type", pyspark_func.when(df.bike_type == 'standard', 1).when(df.bike_type == 'electric', 2)
-                            .when(df.bike_type == 'smart', 3)) \
-                .withColumnRenamed('trip_route_category', 'trip_route_type')
-            # .filter("distance != 0.0") \  ### cannot filter because round-trip have the same start and end stations
-            # .cast(DateType()) # .drop('col_name') # .filter(df.distance != 0.0)
-            logger.info("Processing trip data success: {}, lines={} ...".format(k, self.__trips_dfs[k].count()))
+        # for k, df in self.__trips_dfs.items():
+        logger.info("Processing trip data: {}, lines={} ...".format(k, df.count()))
+        self.__trips_dfs[k] = df.na.drop(subset=["start_lat", "start_lon", "end_lat", "end_lon"]) \
+            .withColumn("distance", self.__udf_cal_dist_by_lat_lon("start_lat", "start_lon", "end_lat", "end_lon")) \
+            .withColumn("distance_cal", self.__udf_cal_dist_by_lat_lon_cal("start_lat", "start_lon", "end_lat", "end_lon")) \
+            .withColumn("used_date", self.__udf_get_date("start_time")) \
+            .withColumn("ptd", self.__udf_get_year("used_date")) \
+            .withColumn("season", self.__udf_get_season("used_date")) \
+            .withColumn("holiday", self.__udf_get_holiday("used_date")) \
+            .withColumn("workingday", self.__udf_get_workingday("used_date")) \
+            .withColumn("start_datetime", self.__udf_format_time_to_datetime("start_time")) \
+            .withColumn("end_datetime", self.__udf_format_time_to_datetime("end_time")) \
+            .withColumn("trip_route_category", pyspark_func.when(df.trip_route_category == 'One Way', 1).when(df.trip_route_category == 'Round Trip', 2)) \
+            .withColumn("passholder_type", pyspark_func.when(df.passholder_type == 'Walk-up', 1).when(df.passholder_type == 'One Day Pass', 2)
+                        .when(df.passholder_type == 'Monthly Pass', 3).when(df.passholder_type == 'Annual Pass', 4)) \
+            .withColumn("bike_type", pyspark_func.when(df.bike_type == 'standard', 1).when(df.bike_type == 'electric', 2)
+                        .when(df.bike_type == 'smart', 3)) \
+            .withColumnRenamed('trip_route_category', 'trip_route_type')
+        # .filter("distance != 0.0") \  ### cannot filter because round-trip have the same start and end stations
+        # .cast(DateType()) # .drop('col_name') # .filter(df.distance != 0.0)
+        logger.info("Processing trip data success: {}, lines={} ...".format(k, self.__trips_dfs[k].count()))
 
-            trip_df_block = self.__trips_dfs[k]
-            self.trips_total_df = self.trips_total_df.unionAll(trip_df_block)
-            logger.info("Processing trip data {}: total size={} ...".format(k, self.trips_total_df.count()))
+    def import_hive(self, df, ptd, tmp_tb_name):
+        logger.info('Importing {} to hive ...'.format(tmp_tb_name))
+        is_first_insert = True
+        df.createOrReplaceTempView(tmp_tb_name)
 
-        logger.info('Trip total RDD schema:')
-        self.print_schema(self.trips_total_df)
-        logger.info('Trip total RDD data:')
-        self.trips_total_df.show(truncate=True)
+        # crt_tb_sql = """
+        #     CREATE TABLE IF NOT EXISTS SharedBike.trip_details (trip_id INT, value STRING) USING hive
+        # """
+        if ptd in self.__ptd:
+            is_first_insert = False
+        else:
+            self.__ptd.append(ptd)
 
-    def exp_total_to_csv(self):
+        crt_tb_sql = """create table IF NOT EXISTS SharedBike.trip_details like {} USING hive""".format(tmp_tb_name)
+        self.__spark.sql(crt_tb_sql)
+        ist_sql = """
+                    insert {mode} table SharedBike.trip_details partition(ptd='{partition}') select * from {src_tb_name}
+                """.format(mode='overwrite' if is_first_insert else 'INTO', partition=ptd, src_tb_name=tmp_tb_name)
+        self.__spark.sql(ist_sql)
+        select_sql = """select count(*) from SharedBike.trip_details partition(ptd='{partition}')""".format(partition=ptd)
+        cnt = self.__spark.sql(select_sql)
+        logger.info('Import {} to hive success, ptd={} has {} data'.format(tmp_tb_name, ptd, cnt))
+
+    def exp_total_to_csv_ods(self):
         logger.info('Export total trip data to csv')
         try:
             export_csv_path = 'results/trips'
