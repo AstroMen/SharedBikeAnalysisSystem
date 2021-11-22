@@ -1,6 +1,68 @@
 # Linux Operation Instruction
 
-## spark docker command line
+## AsterixDB Installation
+### Configuring SSH
+Refer to https://asterixdb.apache.org/docs/0.9.2/install.html
+```shell
+
+luyao@Luyaos-MacBook-Pro Versions % ssh 127.0.0.1
+ssh: connect to host 127.0.0.1 port 22: Connection refused
+
+luyao@Luyaos-MacBook-Pro Versions % sudo launchctl load -w /System/Library/LaunchDaemons/ssh.plist
+luyao@Luyaos-MacBook-Pro Versions % sudo launchctl list | grep ssh                                
+-	0	com.openssh.sshd
+luyao@Luyaos-MacBook-Pro Versions % ssh 127.0.0.1
+The authenticity of host '127.0.0.1 (127.0.0.1)' can't be established.
+ECDSA key fingerprint is SHA256:eRJVk42fS845ov/p443nZ8svOMWFJ33VHh33cFjo1FOkqg.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added '127.0.0.1' (ECDSA) to the list of known hosts.
+Password:
+Last login: Sat Nov 20 22:28:48 2021
+
+luyao@Luyaos-MBP ~ % sudo launchctl list | grep ssh
+Password:
+-	0	com.openssh.sshd
+17744	0	com.openssh.sshd.33267223119-4D74-4D48-8C44-DFFD7BA967C8
+
+luyao@Luyaos-MBP ~ % ssh 127.0.0.1
+Password:
+Last login: Sat Nov 20 23:15:24 2021
+luyao@Luyaos-MBP ~ % exit
+Connection to 127.0.0.1 closed.
+```
+
+### Startup AsterixDB
+Refer to https://asterixdb.apache.org/docs/0.9.7/ncservice.html
+```shell
+luyao@Luyaos-MBP apache-asterixdb-0.9.7 % pwd
+/Users/luyao/Workspace/AsterixDB/apache-asterixdb-0.9.7
+luyao@Luyaos-MBP apache-asterixdb-0.9.7 % cd opt/local/bin 
+luyao@Luyaos-MBP bin % ls
+start-sample-cluster.bat	stop-sample-cluster.bat
+start-sample-cluster.sh		stop-sample-cluster.sh
+luyao@Luyaos-MBP bin % ./start-sample-cluster.sh 
+CLUSTERDIR=/Users/luyao/Workspace/AsterixDB/apache-asterixdb-0.9.7/opt/local
+INSTALLDIR=/Users/luyao/Workspace/AsterixDB/apache-asterixdb-0.9.7
+LOGSDIR=/Users/luyao/Workspace/AsterixDB/apache-asterixdb-0.9.7/opt/local/logs
+
+Using Java version: 16.0.2
+INFO: Starting sample cluster...
+Using Java version: 16.0.2
+INFO: Waiting up to 90 seconds for cluster 127.0.0.1:19002 to be available.
+INFO: Cluster started and is ACTIVE.
+```
+AsterixDB UI: http://localhost:19001/
+
+### AsterixDB SQL primer document
+https://asterixdb.apache.org/docs/0.9.2/sqlpp/primer-sqlpp.html
+
+### AsterixDB HTTP API
+https://asterixdb.apache.org/docs/0.9.2/api.html
+
+### Python wrapper for AsterixDB HTTP API
+https://github.com/j-goldsmith/asterixdb-python
+
+## Spark docker command line
 1. Startup a spark cluster of single working node in standlone mode
 
 ```shell
@@ -71,18 +133,18 @@ docker-compose scale worker=2
 
 ## python
 ### New virtual env
-pyenv activate env_name
+pyenv activate env_name     
 pyenv deactivate
 
 ### ipython notebook
-pip install ipython notebook
+pip install ipython notebook        
 ipython notebook --ip 0.0.0.0
 
 Every cell could be inputed a group of command, press shift + enter to execute.
 
 Notification:
 Show plot need ```%matplotlib inline```     
-Magic instruction:
+Magic instruction:      
 Start with ```%``` is line magic, it works for single line code。     
 Start with ```%%``` is cell magic, it works for code block。
 (注意：输入%%time后即进入多行操作，要用shift+enter多行输出）

@@ -139,15 +139,6 @@ class TripController:
     def stat_basic(self, df):
         df.describe().show()
 
-    def countplot_by_category(self):
-        fig, axes = plt.subplots(nrows=3, ncols=0)
-        fig.set_size_inches(16, 8)
-        for k, df in self.__trips_dfs.items():
-            logger.info('countplot in categorical variable: {}'.format(k))
-            sns.countplot(df['season'], ax=axes[0][0])
-            sns.countplot(df['holiday'], ax=axes[1][0])
-            sns.countplot(df['workingday'], ax=axes[2][0])
-
     def ctor(self):
         self.__trips_dfs = None
         self.trips_total_df = None
