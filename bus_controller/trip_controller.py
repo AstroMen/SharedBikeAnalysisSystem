@@ -177,37 +177,33 @@ class TripController:
         self.__spark.sql(device_sql).show()
 
         logger.info("User behavior analysis ...")
+        self.app_trip_cnt_by_hour()
+
+    def app_trip_cnt_by_hour(self):
         # by hour
         trip_cnt_by_hour_sql = """
             select 
                 start_hour,
                 COUNT(1) as used_count,
                 SUM(duration) as total_duration,
-                SUM(case when plan_duration='1' then 1 else 0 end) as plan_duration_day,
-                SUM(case when plan_duration='30' then 1 else 0 end) as plan_duration_month,
-                SUM(case when plan_duration='365' then 1 else 0 end) as plan_duration_year,
-                SUM(case when trip_route_type='1' then 1 else 0 end) as trip_route_type_one_way,
-                SUM(case when trip_route_type='2' then 1 else 0 end) as trip_route_type_round_trip,
-                SUM(case when passholder_type='1' then 1 else 0 end) as passholder_type_walk_up,
-                SUM(case when passholder_type='2' then 1 else 0 end) as passholder_type_one_day,
-                SUM(case when passholder_type='3' then 1 else 0 end) as passholder_type_monthly,
-                SUM(case when passholder_type='4' then 1 else 0 end) as passholder_type_annual,
-                SUM(case when bike_type='1' then 1 else 0 end) as bike_type_standard,
-                SUM(case when bike_type='2' then 1 else 0 end) as bike_type_electric,
-                SUM(case when bike_type='3' then 1 else 0 end) as bike_type_smart,
-                MAX(case when season='1' then 1 else 0 end) as season_winter,
-                MAX(case when season='2' then 1 else 0 end) as season_spring,
-                MAX(case when season='3' then 1 else 0 end) as season_summer,
-                MAX(case when season='4' then 1 else 0 end) as season_autumn,
+                SUM(case when plan_duration='1' then 1 else 0 end) as plan_duration_day_count,
+                SUM(case when plan_duration='30' then 1 else 0 end) as plan_duration_month_count,
+                SUM(case when plan_duration='365' then 1 else 0 end) as plan_duration_year_count,
+                SUM(case when trip_route_type='1' then 1 else 0 end) as trip_route_type_one_way_count,
+                SUM(case when trip_route_type='2' then 1 else 0 end) as trip_route_type_round_trip_count,
+                SUM(case when passholder_type='1' then 1 else 0 end) as passholder_type_walk_up_count,
+                SUM(case when passholder_type='2' then 1 else 0 end) as passholder_type_one_day_count,
+                SUM(case when passholder_type='3' then 1 else 0 end) as passholder_type_monthly_count,
+                SUM(case when passholder_type='4' then 1 else 0 end) as passholder_type_annual_count,
+                SUM(case when bike_type='1' then 1 else 0 end) as bike_type_standard_count,
+                SUM(case when bike_type='2' then 1 else 0 end) as bike_type_electric_count,
+                SUM(case when bike_type='3' then 1 else 0 end) as bike_type_smart_count,
+                MAX(season) as season,
                 MAX(holiday) as holiday,
                 MAX(workingday) as workingday
               from SharedBike.trip_details
               group by start_hour ORDER BY start_hour;
         """
-        # """
-        #         COUNT(case when holiday=1 then 1 else 0 end) as holiday,
-        #         COUNT(case when workingday=1 then 1 else 0 end) as workingday
-        # """
         trip_cnt_by_hour_tb_name = 'app_trip_cnt_by_hour'
         df = self.__spark.sql(trip_cnt_by_hour_sql)
         self.__hive.exp_by_tb_name(trip_cnt_by_hour_tb_name, 'results/app/{}'.format(trip_cnt_by_hour_tb_name), df=df)
@@ -244,12 +240,11 @@ class TripUdf:
     @staticmethod
     def format_time_to_hour_str(time_str):
         ts = TimeUtils.string_toDatetime(time_str, format_str="%m/%d/%Y %H:%M", is_check=False)
-        return TimeUtils.datetime_toString(ts, format_str='%Y-%m-%d-%H')
+        return TimeUtils.datetime_toString(ts, format_str='%Y-%m-%d %H') + ':00:00'
 
     @staticmethod
     def get_season(date_str: str) -> int:
         # Winter: 0, Spring: 1, Summer: 2, Fall: 3
-        # date_str, time_str = time_str.split(' ')
         month_str, day_str, year_str = date_str.split('/')
         month, day, year = int(month_str), int(day_str), int(year_str)
         if month in [1, 2, 4, 5, 7, 8, 10, 11]:
