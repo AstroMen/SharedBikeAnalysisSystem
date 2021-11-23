@@ -195,12 +195,12 @@ class TripController:
                 SUM(case when bike_type='1' then 1 else 0 end) as bike_type_standard,
                 SUM(case when bike_type='2' then 1 else 0 end) as bike_type_electric,
                 SUM(case when bike_type='3' then 1 else 0 end) as bike_type_smart,
-                SUM(case when season=1 then 1 else 0 end) as season_winter,
-                SUM(case when season='2' then 1 else 0 end) as season_spring,
-                SUM(case when season='3' then 1 else 0 end) as season_summer,
-                SUM(case when season='4' then 1 else 0 end) as season_autumn,
-                SUM(holiday) as holiday,
-                SUM(workingday) as workingday
+                MAX(case when season='1' then 1 else 0 end) as season_winter,
+                MAX(case when season='2' then 1 else 0 end) as season_spring,
+                MAX(case when season='3' then 1 else 0 end) as season_summer,
+                MAX(case when season='4' then 1 else 0 end) as season_autumn,
+                MAX(holiday) as holiday,
+                MAX(workingday) as workingday
               from SharedBike.trip_details
               group by start_hour ORDER BY start_hour;
         """
