@@ -27,8 +27,10 @@ class MasterController:
         # self.__trip_ctl.exp_total_to_csv_ods()
 
         # Middle
-        # self.__trip_ctl.build_dw()
-        self.__hive.exp_by_tb_name('trip_details', 'results/trip_details')
+        mid_tb_name = 'trip_details'
+        self.__hive.drop_tb(mid_tb_name)
+        self.__trip_ctl.build_dw()
+        self.__hive.exp_by_tb_name(mid_tb_name, 'results/{}'.format(mid_tb_name))
 
         # App
         self.__trip_ctl.build_app()

@@ -1,5 +1,4 @@
 import re
-from imp import reload
 
 import matplotlib.pyplot as plt
 import pyspark.sql.dataframe
@@ -57,17 +56,18 @@ class TripController:
                                                            .add(StructField('distance', FloatType(), True))
                                                            .add(StructField('distance_cal', FloatType(), True))
                                                            .add(StructField('used_date', StringType(), True))
-                                                           # .add(StructField('ptd', StringType(), True))
                                                            .add(StructField('season', IntegerType(), True))
                                                            .add(StructField('holiday', IntegerType(), True))
                                                            .add(StructField('workingday', IntegerType(), True))
                                                            .add(StructField('start_datetime', TimestampType(), True))
-                                                           .add(StructField('end_datetime', TimestampType(), True)))\
+                                                           .add(StructField('end_datetime', TimestampType(), True))
+                                                           .add(StructField('used_time', IntegerType(), True)))\
             .withColumnRenamed('trip_route_category', 'trip_route_type')
 
     def init_udf(self):
         self.__udf_get_date = udf(lambda x: x.split(' ')[0] if ' ' in x else x, StringType())  # udf(TripUdf.get_date, StringType())
-        self.__udf_get_year = udf(lambda x: x.split('/')[2] if '/' in x else 'UnknownYear', StringType())  # udf(TripUdf.get_date, StringType())
+        self.__udf_get_used_time = udf(TripUdf.get_used_time, IntegerType())
+        self.__udf_get_year = udf(lambda x: x.split('/')[2] if '/' in x else 'UnknownYear', StringType())
         self.__udf_format_time_to_datetime = udf(TripUdf.format_time_to_datetime, TimestampType())
         self.__udf_get_season = udf(TripUdf.get_season, IntegerType())
         self.__udf_get_holiday = udf(TripUdf.get_holiday, IntegerType())
@@ -90,11 +90,8 @@ class TripController:
             '''
 
             self.clean_ods_data(trip_date, self.__trips_dfs[trip_date])
-
             self.__trips_dfs[trip_date].show()
-
             self.store_dw_to_hive(self.__trips_dfs[trip_date], trip_date.split('-')[0], 'tmp_{}'.format(trip_date.replace('-', '_')))
-
 
         # trip_df_block = self.__trips_dfs[k]
         # self.trips_total_df = self.trips_total_df.unionAll(trip_df_block)
@@ -123,13 +120,13 @@ class TripController:
             .withColumn("workingday", self.__udf_get_workingday("used_date")) \
             .withColumn("start_datetime", self.__udf_format_time_to_datetime("start_time")) \
             .withColumn("end_datetime", self.__udf_format_time_to_datetime("end_time")) \
+            .withColumn("used_time", self.__udf_get_used_time("start_datetime", "end_datetime")) \
             .withColumn("trip_route_category", pyspark_func.when(df.trip_route_category == 'One Way', 1).when(df.trip_route_category == 'Round Trip', 2)) \
             .withColumn("passholder_type", pyspark_func.when(df.passholder_type == 'Walk-up', 1).when(df.passholder_type == 'One Day Pass', 2)
                         .when(df.passholder_type == 'Monthly Pass', 3).when(df.passholder_type == 'Annual Pass', 4)) \
             .withColumn("bike_type", pyspark_func.when(df.bike_type == 'standard', 1).when(df.bike_type == 'electric', 2)
                         .when(df.bike_type == 'smart', 3)) \
-            .withColumnRenamed('trip_route_category', 'trip_route_type')
-            # .withColumn("ptd", self.__udf_get_year("used_date")) \
+            .withColumnRenamed('trip_route_category', 'trip_route_type').drop('start_time').drop('end_time')
         # .filter("distance != 0.0") \  ### cannot filter because round-trip have the same start and end stations
         # .cast(DateType()) # .drop('col_name') # .filter(df.distance != 0.0)
         logger.info("Processing trip data success: {}, lines={} ...".format(k, self.__trips_dfs[k].count()))
@@ -153,10 +150,10 @@ class TripController:
                 """.format(tmp_tb_name)  # PARTITIONED BY (ptd String)
 
         crt_tb_sql = """
-        CREATE TABLE IF NOT EXISTS SharedBike.trip_details (trip_id int, duration int, start_time string, end_time string,
+        CREATE TABLE IF NOT EXISTS SharedBike.trip_details (trip_id int, duration int,
         start_station int, start_lat double, start_lon double, end_station int, end_lat double, end_lon double, bike_id int,
         plan_duration int, trip_route_type int, passholder_type int, bike_type int, distance float, distance_cal float,
-        used_date string, season int, holiday int, workingday int, start_datetime timestamp, end_datetime timestamp)
+        used_date string, season int, holiday int, workingday int, start_datetime timestamp, end_datetime timestamp, used_time int)
         PARTITIONED BY (ptd String)
         """
         self.__spark.sql(crt_tb_sql)
@@ -208,6 +205,10 @@ class TripUdf:
     def get_date(time_str: str) -> str:
         date_str, time_str = time_str.split(' ')
         return date_str
+
+    @staticmethod
+    def get_used_time(time1, time2):
+        return int(TimeUtils.duration_by_ts(str(time1), str(time2))/60)
 
     @staticmethod
     def format_time_to_datetime(time_str: str) -> TimestampType:

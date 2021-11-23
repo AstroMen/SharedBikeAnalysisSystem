@@ -93,12 +93,12 @@ class TimeUtils:
         #     logger.error(e)
 
     @staticmethod
-    def get_nextday_asString(cur_day, cur_format='%Y-%m-%d', next_format='%Y-%m-%d'):
+    def get_nextday_as_str(cur_day, cur_format='%Y-%m-%d', next_format='%Y-%m-%d'):
         cur_day = datetime.datetime.strptime(cur_day, cur_format)
         return (cur_day + timedelta(days=1)).strftime(next_format)
 
     @staticmethod
-    def get_last_month_asString(deli='-'):
+    def get_last_month_as_str(deli='-'):
         format_str = '%Y-%m-%d'
         today = TimeUtils.get_now_as_str(format_str=format_str)
         month = datetime.datetime.strptime(today, format_str).month
@@ -235,6 +235,16 @@ class TimeUtils:
         return new_dt
 
     @staticmethod
+    def duration_by_ts(time1, time2):
+        """
+        duration between two time
+        :param time1: string
+        :param time2: string
+        :return: seconds
+        """
+        return (TimeUtils.string_toDatetime(time2) - TimeUtils.string_toDatetime(time1)).seconds
+
+    @staticmethod
     def is_usa_holiday(year, month, day):
         us_holidays = holidays.US()
         return '{}-{}-{}'.format(month if month > 9 else '0{}'.format(month),
@@ -257,11 +267,12 @@ class DateEncoder(json.JSONEncoder):
 
 if __name__ == '__main__':
     # test = TimeUtils.is_usa_holiday(2021, 1, 1)
-    test = TimeUtils.is_business_day('2021-1-1')
+    # test = TimeUtils.is_business_day('2021-1-1')
     # time_str = '7/1/2021 7:14'
     # test = TimeUtils.string_toDatetime(time_str, format_str="%m/%d/%Y %H:%M", is_check=False)
     # # string_toDatetime(time_str, format_str="%Y-%m-%d %H:%M:%S", is_check=True)
-    print(test)
+    print('')
+
 
 
 

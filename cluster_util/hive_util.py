@@ -1,4 +1,7 @@
+import pyspark
 from pyspark.sql import HiveContext
+from common.file_utils import FileUtils
+from Logger import logger
 
 
 class HiveUtil:
@@ -39,6 +42,11 @@ class HiveUtil:
         self.__spark.sql('drop database if exists {};'.format(db_name))
 
     def exp_by_tb_name(self, tb_name, export_csv_path, partition_cnt=1):
-        df = self.__spark.sql('select * from {};'.format(tb_name))
-        df.repartition(partition_cnt).write.csv(export_csv_path, encoding="utf-8", header=True)
+        try:
+            if FileUtils.path_exists(export_csv_path):
+                FileUtils.remove_folder(export_csv_path)
+            df = self.__spark.sql('select * from {};'.format(tb_name))
+            df.repartition(partition_cnt).write.csv(export_csv_path, encoding="utf-8", header=True)
+        except pyspark.sql.utils.AnalysisException as e:
+            logger.error('Export {} to csv error: {}'.format(tb_name, e))
 
