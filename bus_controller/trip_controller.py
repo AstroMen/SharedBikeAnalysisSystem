@@ -75,8 +75,8 @@ class TripController:
         self.__udf_cal_dist_by_lat_lon = udf(TripUdf.cal_dist_by_lat_lon, FloatType())
         self.__udf_cal_dist_by_lat_lon_cal = udf(TripUdf.cal_dist_by_lat_lon_cal, FloatType())
 
-    def build_ods(self):
-        logger.info("Building trip ODS ...")
+    def build_dw(self):
+        logger.info("Building trip DW ...")
         # Spark read csv
         for file_name in self.__trips_files_name:
             logger.info('Reading file {} ...'.format(file_name))
@@ -93,7 +93,7 @@ class TripController:
 
             self.__trips_dfs[trip_date].show()
 
-            self.import_hive(self.__trips_dfs[trip_date], trip_date.split('-')[0], 'tmp_{}'.format(trip_date.replace('-', '_')))
+            self.store_dw_to_hive(self.__trips_dfs[trip_date], trip_date.split('-')[0], 'tmp_{}'.format(trip_date.replace('-', '_')))
 
 
         # trip_df_block = self.__trips_dfs[k]
@@ -134,7 +134,7 @@ class TripController:
         # .cast(DateType()) # .drop('col_name') # .filter(df.distance != 0.0)
         logger.info("Processing trip data success: {}, lines={} ...".format(k, self.__trips_dfs[k].count()))
 
-    def import_hive(self, df, ptd, tmp_tb_name):
+    def store_dw_to_hive(self, df, ptd, tmp_tb_name):
         logger.info('Importing {} to hive ...'.format(tmp_tb_name))
         is_first_insert = True
         df.createOrReplaceTempView(tmp_tb_name)
@@ -173,8 +173,14 @@ class TripController:
         cnt = self.__spark.sql(select_sql).collect()[0][0]
         logger.info('Import {} to hive success, ptd={} has {} data.'.format(tmp_tb_name, ptd, cnt))
 
+    def build_app(self):
+        logger.info("Building trip APP ...")
+        device_sql = """SELECT bike_id, sum(distance)  FROM trip_details WHERE trip_route_type=1 GROUP BY bike_id"""
+        self.__spark.sql(device_sql).show()
+        logger.info("APP ...")
+
     def exp_total_to_csv_ods(self):
-        logger.info('Export total trip data to csv')
+        logger.info('Export total trip data to csv ...')
         try:
             export_csv_path = 'results/trips'
             if FileUtils.path_exists(export_csv_path):

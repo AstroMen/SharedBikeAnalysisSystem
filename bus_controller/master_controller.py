@@ -24,11 +24,14 @@ class MasterController:
     def trip_handler(self):
         self.__trip_ctl = TripController(self.__spark, self.__hive, self.__data_folder_name)
         # ODS
-        self.__trip_ctl.build_ods()
         # self.__trip_ctl.exp_total_to_csv_ods()
+
         # Middle
+        # self.__trip_ctl.build_dw()
+        self.__hive.exp_by_tb_name('trip_details', 'results/trip_details')
 
         # App
+        self.__trip_ctl.build_app()
 
 
     def statistics(self):
