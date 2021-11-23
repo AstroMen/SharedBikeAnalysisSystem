@@ -50,7 +50,7 @@ class TripController:
         self.__trips_files_name = list(filter(lambda x: x.startswith(TRIPS_FNAME_PREFIX), files_name))
         self.__trips_dfs = dict()
         self.trips_total_df = None
-        self.__ptd = list()
+        self.ptd = list()
         # Build total RDD schema
         self.trips_total_df = self.__spark.createDataFrame(self.__spark.sparkContext.emptyRDD(), TRIP_SCHEMA
                                                            .add(StructField('distance', FloatType(), True))
@@ -61,7 +61,7 @@ class TripController:
                                                            .add(StructField('workingday', IntegerType(), True))
                                                            .add(StructField('start_datetime', TimestampType(), True))
                                                            .add(StructField('end_datetime', TimestampType(), True))
-                                                           .add(StructField('used_time', IntegerType(), True)))\
+                                                           .add(StructField('start_hour', StringType(), True)))\
             .withColumnRenamed('trip_route_category', 'trip_route_type')
 
     def init_udf(self):
@@ -69,6 +69,7 @@ class TripController:
         self.__udf_get_used_time = udf(TripUdf.get_used_time, IntegerType())
         self.__udf_get_year = udf(lambda x: x.split('/')[2] if '/' in x else 'UnknownYear', StringType())
         self.__udf_format_time_to_datetime = udf(TripUdf.format_time_to_datetime, TimestampType())
+        self.__udf_format_time_to_hour_str = udf(TripUdf.format_time_to_hour_str, StringType())
         self.__udf_get_season = udf(TripUdf.get_season, IntegerType())
         self.__udf_get_holiday = udf(TripUdf.get_holiday, IntegerType())
         self.__udf_get_workingday = udf(TripUdf.get_workingday, IntegerType())
@@ -120,13 +121,14 @@ class TripController:
             .withColumn("workingday", self.__udf_get_workingday("used_date")) \
             .withColumn("start_datetime", self.__udf_format_time_to_datetime("start_time")) \
             .withColumn("end_datetime", self.__udf_format_time_to_datetime("end_time")) \
-            .withColumn("used_time", self.__udf_get_used_time("start_datetime", "end_datetime")) \
+            .withColumn("start_hour", self.__udf_format_time_to_hour_str("start_time")) \
             .withColumn("trip_route_category", pyspark_func.when(df.trip_route_category == 'One Way', 1).when(df.trip_route_category == 'Round Trip', 2)) \
             .withColumn("passholder_type", pyspark_func.when(df.passholder_type == 'Walk-up', 1).when(df.passholder_type == 'One Day Pass', 2)
                         .when(df.passholder_type == 'Monthly Pass', 3).when(df.passholder_type == 'Annual Pass', 4)) \
             .withColumn("bike_type", pyspark_func.when(df.bike_type == 'standard', 1).when(df.bike_type == 'electric', 2)
                         .when(df.bike_type == 'smart', 3)) \
             .withColumnRenamed('trip_route_category', 'trip_route_type').drop('start_time').drop('end_time')
+        # .withColumn("used_time", self.__udf_get_used_time("start_datetime", "end_datetime")) \
         # .filter("distance != 0.0") \  ### cannot filter because round-trip have the same start and end stations
         # .cast(DateType()) # .drop('col_name') # .filter(df.distance != 0.0)
         logger.info("Processing trip data success: {}, lines={} ...".format(k, self.__trips_dfs[k].count()))
@@ -136,10 +138,10 @@ class TripController:
         is_first_insert = True
         df.createOrReplaceTempView(tmp_tb_name)
 
-        if ptd in self.__ptd:
+        if ptd in self.ptd:
             is_first_insert = False
         else:
-            self.__ptd.append(ptd)
+            self.ptd.append(ptd)
 
         # crt_tb_sql = """
         #     CREATE TABLE IF NOT EXISTS SharedBike.trip_details (trip_id INT, value STRING) USING hive
@@ -150,10 +152,10 @@ class TripController:
                 """.format(tmp_tb_name)  # PARTITIONED BY (ptd String)
 
         crt_tb_sql = """
-        CREATE TABLE IF NOT EXISTS SharedBike.trip_details (trip_id int, duration int,
-        start_station int, start_lat double, start_lon double, end_station int, end_lat double, end_lon double, bike_id int,
-        plan_duration int, trip_route_type int, passholder_type int, bike_type int, distance float, distance_cal float,
-        used_date string, season int, holiday int, workingday int, start_datetime timestamp, end_datetime timestamp, used_time int)
+        CREATE TABLE IF NOT EXISTS SharedBike.trip_details (trip_id int, duration int, start_station int, start_lat double, 
+        start_lon double, end_station int, end_lat double, end_lon double, bike_id int, plan_duration int, 
+        trip_route_type int, passholder_type int, bike_type int, distance float, distance_cal float, used_date string, 
+        season int, holiday int, workingday int, start_datetime timestamp, end_datetime timestamp, start_hour string)
         PARTITIONED BY (ptd String)
         """
         self.__spark.sql(crt_tb_sql)
@@ -165,26 +167,51 @@ class TripController:
 
         # self.__hive.exec_sql(''' create table SharedBike.trip_details like {} '''.format(tmp_tb_name))
         # self.__hive.exec_sql(''' insert overwrite table SharedBike.trip_details select * from {} '''.format(tmp_tb_name))
-
-        select_sql = '''select count(*) from SharedBike.trip_details where ptd="{partition}"'''.format(partition=ptd)
+        select_sql = '''select count(1) from SharedBike.trip_details where ptd="{partition}"'''.format(partition=ptd)
         cnt = self.__spark.sql(select_sql).collect()[0][0]
         logger.info('Import {} to hive success, ptd={} has {} data.'.format(tmp_tb_name, ptd, cnt))
 
     def build_app(self):
         logger.info("Building trip APP ...")
-        device_sql = """SELECT bike_id, sum(distance)  FROM trip_details WHERE trip_route_type=1 GROUP BY bike_id"""
+        device_sql = """SELECT bike_id, sum(distance) FROM trip_details WHERE trip_route_type=1 GROUP BY bike_id"""
         self.__spark.sql(device_sql).show()
-        logger.info("APP ...")
 
-    def exp_total_to_csv_ods(self):
-        logger.info('Export total trip data to csv ...')
-        try:
-            export_csv_path = 'results/trips'
-            if FileUtils.path_exists(export_csv_path):
-                FileUtils.remove_folder(export_csv_path)
-            self.trips_total_df.repartition(1).write.csv(export_csv_path, encoding="utf-8", header=True)
-        except pyspark.sql.utils.AnalysisException as e:
-            logger.error('Trip export csv error: {}'.format(e))
+        logger.info("User behavior analysis ...")
+        # by hour
+        trip_cnt_by_hour_sql = """
+            select 
+                start_hour,
+                COUNT(1) as used_count,
+                SUM(duration) as total_duration,
+                SUM(case when plan_duration='1' then 1 else 0 end) as plan_duration_day,
+                SUM(case when plan_duration='30' then 1 else 0 end) as plan_duration_month,
+                SUM(case when plan_duration='365' then 1 else 0 end) as plan_duration_year,
+                SUM(case when trip_route_type='1' then 1 else 0 end) as trip_route_type_one_way,
+                SUM(case when trip_route_type='2' then 1 else 0 end) as trip_route_type_round_trip,
+                SUM(case when passholder_type='1' then 1 else 0 end) as passholder_type_walk_up,
+                SUM(case when passholder_type='2' then 1 else 0 end) as passholder_type_one_day,
+                SUM(case when passholder_type='3' then 1 else 0 end) as passholder_type_monthly,
+                SUM(case when passholder_type='4' then 1 else 0 end) as passholder_type_annual,
+                SUM(case when bike_type='1' then 1 else 0 end) as bike_type_standard,
+                SUM(case when bike_type='2' then 1 else 0 end) as bike_type_electric,
+                SUM(case when bike_type='3' then 1 else 0 end) as bike_type_smart,
+                SUM(case when season=1 then 1 else 0 end) as season_winter,
+                SUM(case when season='2' then 1 else 0 end) as season_spring,
+                SUM(case when season='3' then 1 else 0 end) as season_summer,
+                SUM(case when season='4' then 1 else 0 end) as season_autumn,
+                SUM(holiday) as holiday,
+                SUM(workingday) as workingday
+              from SharedBike.trip_details
+              group by start_hour ORDER BY start_hour;
+        """
+        # """
+        #         COUNT(case when holiday=1 then 1 else 0 end) as holiday,
+        #         COUNT(case when workingday=1 then 1 else 0 end) as workingday
+        # """
+        trip_cnt_by_hour_tb_name = 'app_trip_cnt_by_hour'
+        df = self.__spark.sql(trip_cnt_by_hour_sql)
+        self.__hive.exp_by_tb_name(trip_cnt_by_hour_tb_name, 'results/app/{}'.format(trip_cnt_by_hour_tb_name), df=df)
+        logger.info('Generated app_trip_cnt_by_hour.')
 
     def print_schema(self, df):
         df.printSchema()
@@ -213,6 +240,11 @@ class TripUdf:
     @staticmethod
     def format_time_to_datetime(time_str: str) -> TimestampType:
         return TimeUtils.string_toDatetime(time_str, format_str="%m/%d/%Y %H:%M", is_check=False)
+
+    @staticmethod
+    def format_time_to_hour_str(time_str):
+        ts = TimeUtils.string_toDatetime(time_str, format_str="%m/%d/%Y %H:%M", is_check=False)
+        return TimeUtils.datetime_toString(ts, format_str='%Y-%m-%d-%H')
 
     @staticmethod
     def get_season(date_str: str) -> int:

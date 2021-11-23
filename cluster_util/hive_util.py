@@ -20,6 +20,9 @@ class HiveUtil:
         self.__spark.sql('SHOW PARTITIONS {}'.format(tb_name)).show()
         self.__spark.sql('show tables').show()
 
+    def get_partition_list(self, tb_name):
+        return self.__spark.sql('SHOW PARTITIONS {}'.format(tb_name))
+
     def list_tables(self):
         return self.__spark.catalog.listTables()
 
@@ -41,12 +44,14 @@ class HiveUtil:
     def drop_db(self, db_name):
         self.__spark.sql('drop database if exists {};'.format(db_name))
 
-    def exp_by_tb_name(self, tb_name, export_csv_path, partition_cnt=1):
+    def exp_by_tb_name(self, tb_name, export_csv_path, partition_cnt=1, df=None):
         try:
             if FileUtils.path_exists(export_csv_path):
                 FileUtils.remove_folder(export_csv_path)
-            df = self.__spark.sql('select * from {};'.format(tb_name))
+            df = self.__spark.sql('select * from {};'.format(tb_name)) if df is None else df
             df.repartition(partition_cnt).write.csv(export_csv_path, encoding="utf-8", header=True)
         except pyspark.sql.utils.AnalysisException as e:
             logger.error('Export {} to csv error: {}'.format(tb_name, e))
 
+    def print_perf_explain(self, df):
+        df.explain(True)

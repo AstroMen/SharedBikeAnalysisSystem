@@ -28,9 +28,9 @@ if __name__ == '__main__':
     #     exit(0)
 
     # Initailize trip
-    master = MasterController(spark, hive=hive)
+    master = MasterController(spark, hive=hive, is_test=False)
     master.init_dw()
-    master.trip_handler()
+    master.trip_handler(remid=False)
     master.statistics()
 
     # db_names = spark.sql("show databases").collect()

@@ -42,6 +42,10 @@ class TimeUtils:
 
     @staticmethod
     def string_toDatetime(time_str, format_str="%Y-%m-%d %H:%M:%S", is_check=True):
+        if time_str is None:
+            print(time_str)
+            exit(0)
+            return None
         try:
             if is_check and len(time_str) != 16:
                 format_str = TimeUtils.validate_dt_format(time_str, format_str)
@@ -271,8 +275,10 @@ if __name__ == '__main__':
     # time_str = '7/1/2021 7:14'
     # test = TimeUtils.string_toDatetime(time_str, format_str="%m/%d/%Y %H:%M", is_check=False)
     # # string_toDatetime(time_str, format_str="%Y-%m-%d %H:%M:%S", is_check=True)
-    print('')
 
-
-
+    time_str = '1/6/2021 13:53'
+    ts = TimeUtils.string_toDatetime(time_str, format_str="%m/%d/%Y %H:%M", is_check=False)
+    print('format_time_to_hour_str: {}'.format(time_str))
+    test = TimeUtils.datetime_toString(ts, format_str='%Y-%m-%d-%H')
+    print(test)
 
