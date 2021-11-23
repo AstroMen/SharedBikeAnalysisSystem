@@ -25,7 +25,7 @@ class MasterController:
         self.__trip_ctl = TripController(self.__spark, self.__hive, self.__data_folder_name)
         # ODS
         self.__trip_ctl.build_ods()
-        self.__trip_ctl.exp_total_to_csv_ods()
+        # self.__trip_ctl.exp_total_to_csv_ods()
         # Middle
 
         # App
@@ -33,7 +33,7 @@ class MasterController:
 
     def statistics(self):
         logger.info('Basic Statistics')
-        self.__trip_ctl.stat_basic(self.__trip_ctl.trips_total_df)
+        # self.__trip_ctl.stat_basic(self.__trip_ctl.trips_total_df)
 
         logger.info('Count histogram')
         # col_name = ['trip_route_type', 'passholder_type', 'bike_type', 'season', 'holiday', 'workingday']

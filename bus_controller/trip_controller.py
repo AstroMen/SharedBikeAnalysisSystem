@@ -57,7 +57,7 @@ class TripController:
                                                            .add(StructField('distance', FloatType(), True))
                                                            .add(StructField('distance_cal', FloatType(), True))
                                                            .add(StructField('used_date', StringType(), True))
-                                                           .add(StructField('ptd', StringType(), True))
+                                                           # .add(StructField('ptd', StringType(), True))
                                                            .add(StructField('season', IntegerType(), True))
                                                            .add(StructField('holiday', IntegerType(), True))
                                                            .add(StructField('workingday', IntegerType(), True))
@@ -118,7 +118,6 @@ class TripController:
             .withColumn("distance", self.__udf_cal_dist_by_lat_lon("start_lat", "start_lon", "end_lat", "end_lon")) \
             .withColumn("distance_cal", self.__udf_cal_dist_by_lat_lon_cal("start_lat", "start_lon", "end_lat", "end_lon")) \
             .withColumn("used_date", self.__udf_get_date("start_time")) \
-            .withColumn("ptd", self.__udf_get_year("used_date")) \
             .withColumn("season", self.__udf_get_season("used_date")) \
             .withColumn("holiday", self.__udf_get_holiday("used_date")) \
             .withColumn("workingday", self.__udf_get_workingday("used_date")) \
@@ -130,6 +129,7 @@ class TripController:
             .withColumn("bike_type", pyspark_func.when(df.bike_type == 'standard', 1).when(df.bike_type == 'electric', 2)
                         .when(df.bike_type == 'smart', 3)) \
             .withColumnRenamed('trip_route_category', 'trip_route_type')
+            # .withColumn("ptd", self.__udf_get_year("used_date")) \
         # .filter("distance != 0.0") \  ### cannot filter because round-trip have the same start and end stations
         # .cast(DateType()) # .drop('col_name') # .filter(df.distance != 0.0)
         logger.info("Processing trip data success: {}, lines={} ...".format(k, self.__trips_dfs[k].count()))
@@ -139,23 +139,39 @@ class TripController:
         is_first_insert = True
         df.createOrReplaceTempView(tmp_tb_name)
 
-        # crt_tb_sql = """
-        #     CREATE TABLE IF NOT EXISTS SharedBike.trip_details (trip_id INT, value STRING) USING hive
-        # """
         if ptd in self.__ptd:
             is_first_insert = False
         else:
             self.__ptd.append(ptd)
 
-        crt_tb_sql = """create table IF NOT EXISTS SharedBike.trip_details like {} USING hive""".format(tmp_tb_name)
+        # crt_tb_sql = """
+        #     CREATE TABLE IF NOT EXISTS SharedBike.trip_details (trip_id INT, value STRING) USING hive
+        # """
+
+        crt_tb_sql = """
+                    create table IF NOT EXISTS SharedBike.trip_details like {} USING hive
+                """.format(tmp_tb_name)  # PARTITIONED BY (ptd String)
+
+        crt_tb_sql = """
+        CREATE TABLE IF NOT EXISTS SharedBike.trip_details (trip_id int, duration int, start_time string, end_time string,
+        start_station int, start_lat double, start_lon double, end_station int, end_lat double, end_lon double, bike_id int,
+        plan_duration int, trip_route_type int, passholder_type int, bike_type int, distance float, distance_cal float,
+        used_date string, season int, holiday int, workingday int, start_datetime timestamp, end_datetime timestamp)
+        PARTITIONED BY (ptd String)
+        """
         self.__spark.sql(crt_tb_sql)
+
         ist_sql = """
                     insert {mode} table SharedBike.trip_details partition(ptd='{partition}') select * from {src_tb_name}
-                """.format(mode='overwrite' if is_first_insert else 'INTO', partition=ptd, src_tb_name=tmp_tb_name)
+            """.format(mode='overwrite' if is_first_insert else 'INTO', partition=ptd, src_tb_name=tmp_tb_name)
         self.__spark.sql(ist_sql)
-        select_sql = """select count(*) from SharedBike.trip_details partition(ptd='{partition}')""".format(partition=ptd)
-        cnt = self.__spark.sql(select_sql)
-        logger.info('Import {} to hive success, ptd={} has {} data'.format(tmp_tb_name, ptd, cnt))
+
+        # self.__hive.exec_sql(''' create table SharedBike.trip_details like {} '''.format(tmp_tb_name))
+        # self.__hive.exec_sql(''' insert overwrite table SharedBike.trip_details select * from {} '''.format(tmp_tb_name))
+
+        select_sql = '''select count(*) from SharedBike.trip_details where ptd="{partition}"'''.format(partition=ptd)
+        cnt = self.__spark.sql(select_sql).collect()[0][0]
+        logger.info('Import {} to hive success, ptd={} has {} data.'.format(tmp_tb_name, ptd, cnt))
 
     def exp_total_to_csv_ods(self):
         logger.info('Export total trip data to csv')
