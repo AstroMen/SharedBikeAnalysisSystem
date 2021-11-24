@@ -56,6 +56,7 @@ class TripController:
                                                            .add(StructField('distance', FloatType(), True))
                                                            .add(StructField('distance_cal', FloatType(), True))
                                                            .add(StructField('used_date', StringType(), True))
+                                                           .add(StructField('used_hour', IntegerType(), True))
                                                            .add(StructField('season', IntegerType(), True))
                                                            .add(StructField('holiday', IntegerType(), True))
                                                            .add(StructField('workingday', IntegerType(), True))
@@ -66,6 +67,7 @@ class TripController:
 
     def init_udf(self):
         self.__udf_get_date = udf(lambda x: x.split(' ')[0] if ' ' in x else x, StringType())  # udf(TripUdf.get_date, StringType())
+        self.__udf_get_hour = udf(lambda x: int(x.split(' ')[1].split(':')[0]) if ' ' in x and ':' in x else x, IntegerType())  # udf(TripUdf.get_date, StringType())
         self.__udf_get_used_time = udf(TripUdf.get_used_time, IntegerType())
         self.__udf_get_year = udf(lambda x: x.split('/')[2] if '/' in x else 'UnknownYear', StringType())
         self.__udf_format_time_to_datetime = udf(TripUdf.format_time_to_datetime, TimestampType())
@@ -116,6 +118,7 @@ class TripController:
             .withColumn("distance", self.__udf_cal_dist_by_lat_lon("start_lat", "start_lon", "end_lat", "end_lon")) \
             .withColumn("distance_cal", self.__udf_cal_dist_by_lat_lon_cal("start_lat", "start_lon", "end_lat", "end_lon")) \
             .withColumn("used_date", self.__udf_get_date("start_time")) \
+            .withColumn("used_hour", self.__udf_get_hour("start_time")) \
             .withColumn("season", self.__udf_get_season("used_date")) \
             .withColumn("holiday", self.__udf_get_holiday("used_date")) \
             .withColumn("workingday", self.__udf_get_workingday("used_date")) \
@@ -153,8 +156,8 @@ class TripController:
 
         crt_tb_sql = """
         CREATE TABLE IF NOT EXISTS SharedBike.trip_details (trip_id int, duration int, start_station int, start_lat double, 
-        start_lon double, end_station int, end_lat double, end_lon double, bike_id int, plan_duration int, 
-        trip_route_type int, passholder_type int, bike_type int, distance float, distance_cal float, used_date string, 
+        start_lon double, end_station int, end_lat double, end_lon double, bike_id int, plan_duration int, trip_route_type int, 
+        passholder_type int, bike_type int, distance float, distance_cal float, used_date string, used_hour int,
         season int, holiday int, workingday int, start_datetime timestamp, end_datetime timestamp, start_hour string)
         PARTITIONED BY (ptd String)
         """
