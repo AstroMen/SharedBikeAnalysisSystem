@@ -44,8 +44,8 @@ class MasterController:
 
         for year in part_info.collect():
             logger.info('Basic Statistics in {}'.format(year[0]))
-            desc_list_names = ['duration', 'start_lat', 'start_lon', 'end_lat', 'end_lon', 'plan_duration',  'trip_route_type',
-                               'passholder_type', 'bike_type', 'distance', 'season', 'holiday', 'workingday']
+            desc_list_names = ['duration', 'plan_duration',  'trip_route_type', 'passholder_type', 'bike_type',
+                               'distance', 'season', 'holiday', 'workingday']
             df_year = self.__spark.sql('select {} from trip_details where {};'.format(','.join(desc_list_names), year[0]))
             df_year.describe().show()
             time.sleep(1)
