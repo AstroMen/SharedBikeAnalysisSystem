@@ -30,7 +30,7 @@ if __name__ == '__main__':
     # Initailize trip
     master = MasterController(spark, hive=hive, is_test=False)
     master.init_dw()
-    master.trip_handler(remid=False)
+    master.trip_handler(re_mid=True)
     master.statistics()
 
     # db_names = spark.sql("show databases").collect()

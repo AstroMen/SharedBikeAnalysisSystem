@@ -36,12 +36,14 @@ TRIP_SCHEMA = StructType([
 
 
 class TripController:
-    def __init__(self, spark, hive, data_folder_name):
+    def __init__(self, spark, hive, data_folder_name, geo_poly_set, poly_shape_set):
         logger.info("Initiating trip controller ...")
 
         self.__spark = spark
         self.__hive = hive
         self.__data_folder_name = data_folder_name
+        self.__geo_poly_set = geo_poly_set
+        self.__poly_shape_set = poly_shape_set
         self.init_udf()
 
         # Get data files name
@@ -55,6 +57,7 @@ class TripController:
         self.trips_total_df = self.__spark.createDataFrame(self.__spark.sparkContext.emptyRDD(), TRIP_SCHEMA
                                                            .add(StructField('distance', FloatType(), True))
                                                            .add(StructField('distance_cal', FloatType(), True))
+                                                           .add(StructField('city_name', FloatType(), True))
                                                            .add(StructField('used_date', StringType(), True))
                                                            .add(StructField('used_hour', IntegerType(), True))
                                                            .add(StructField('season', IntegerType(), True))
@@ -77,6 +80,7 @@ class TripController:
         self.__udf_get_workingday = udf(TripUdf.get_workingday, IntegerType())
         self.__udf_cal_dist_by_lat_lon = udf(TripUdf.cal_dist_by_lat_lon, FloatType())
         self.__udf_cal_dist_by_lat_lon_cal = udf(TripUdf.cal_dist_by_lat_lon_cal, FloatType())
+        self.__udf_get_city_name_by_coordinates = udf(lambda x, y: 'LA' if GeoUtils.is_exist_in_multi_poly(x, y, self.__poly_shape_set['LA']) else 'UNKNOWN', StringType())
 
     def build_dw(self):
         logger.info("Building trip DW ...")
@@ -117,6 +121,7 @@ class TripController:
         self.__trips_dfs[k] = df.na.drop(subset=["start_lat", "start_lon", "end_lat", "end_lon"]) \
             .withColumn("distance", self.__udf_cal_dist_by_lat_lon("start_lat", "start_lon", "end_lat", "end_lon")) \
             .withColumn("distance_cal", self.__udf_cal_dist_by_lat_lon_cal("start_lat", "start_lon", "end_lat", "end_lon")) \
+            .withColumn("city_name", self.__udf_get_city_name_by_coordinates("start_lon", "start_lat")) \
             .withColumn("used_date", self.__udf_get_date("start_time")) \
             .withColumn("used_hour", self.__udf_get_hour("start_time")) \
             .withColumn("season", self.__udf_get_season("used_date")) \

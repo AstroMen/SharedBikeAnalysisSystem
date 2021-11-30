@@ -4,10 +4,11 @@ Description: MultiTool
 @author: Men Luyao 
 @date: 2019/9/12 
 """
-import os, stat
-import csv, zipfile
+import os, stat, sys
+import csv, zipfile, json
 import codecs
 from common.time_utils import TimeUtils
+from common.json_utils import JsonUtils
 from common.Logger import logger
 
 
@@ -117,3 +118,37 @@ class FileUtils:
                 os.remove(c_path)
         if is_include_self:
             os.rmdir(path)
+
+    @staticmethod
+    def imp_json_file(path, filename, is_abs=False, ext='json', btf=False):
+        content, json_data = None, None
+        path = FileUtils.normalize_path(path) if not is_abs else '{}/'.format(path)
+        full_path = "{}{}.{}".format(path, filename, ext)
+
+        try:
+            f = open(full_path, "rb")
+            content = f.read().decode('utf-8')
+            f.close()
+            if btf:
+                return JsonUtils.json_loads_byteified(content)
+        except ValueError as e:
+            logger.error('Read json file fail. {}'.format(e))
+        except BaseException as e:
+            logger.error('Read json file fail. {}'.format(e))
+        return content
+
+    @staticmethod
+    def exp_json_file(path, filename, data, indent=4, ensure_ascii=False):
+        path = FileUtils.normalize_path(path)
+        full_path = "{}{}.json".format(path, filename)
+
+        try:
+            # if sys.getdefaultencoding() != 'utf-8':
+            #     reload(sys)
+            #     sys.setdefaultencoding('utf-8')
+            json_str = json.dumps(data, indent=indent, ensure_ascii=ensure_ascii)
+            with open(full_path, 'w') as json_file:
+                json_file.write(json_str)
+            logger.info('Finish export json file [{}].'.format(full_path))
+        except BaseException as e:
+            logger.error('Write to json file fail. {}'.format(e))
