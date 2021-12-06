@@ -32,17 +32,4 @@ if __name__ == '__main__':
     master.init_dw()
     master.trip_handler(re_mid=True)
     master.statistics()
-
-    # db_names = spark.sql("show databases").collect()
-    # tbs_schema = spark.sql("show tables from default;")
-    # tbs_schema.show()
-    #
-    # lines = spark.sparkContext.parallelize(["hello world", "hi"])
-    # words = lines.flatMap(lambda line: line.split(" "))
-    # print(words.count())
-    # print(words.first())
-    #
-    # sum = lines.reduce(lambda x, y: x + y)
-    # print('元素总和为： ', sum)
-
     master.ctor()

@@ -107,6 +107,10 @@ class TripController:
         # self.__udf_get_city_name_by_coordinates = udf(lambda x, y, p_shape=poly_shape_set['LA']: 'LA' if p_shape.intersects(Point(x, y)) else 'UNKNOWN', StringType())
         # self.__udf_get_city_name_by_coordinates = udf(lambda x, y: 'LA' if GeoUtils.is_exist_in_multi_poly(x, y, poly_shape_set['LA']) else 'UNKNOWN', StringType())
 
+        self.__udf_is_morning_or_evening = udf(lambda x: 1 if TripUdf.get_hour_mode(int(x.split(' ')[1].split(':')[0]), 'MOE') else 0, IntegerType())
+        self.__udf_is_noon = udf(lambda x: 1 if TripUdf.get_hour_mode(int(x.split(' ')[1].split(':')[0]), 'NOON') else 0, IntegerType())
+        self.__udf_is_idle = udf(lambda x: 1 if TripUdf.get_hour_mode(int(x.split(' ')[1].split(':')[0]), 'IDLE') else 0, IntegerType())
+
     def build_dw(self):
         logger.info("Building trip DW ...")
         # Spark read csv
@@ -162,9 +166,10 @@ class TripController:
                         .when(df.bike_type == 'smart', 3)) \
             .withColumnRenamed('trip_route_category', 'trip_route_type')\
             .drop('start_time').drop('end_time')
-
         # .filter("distance != 0.0") \  ### cannot filter because round-trip have the same start and end stations
         # .cast(DateType()) # .drop('col_name') # .filter(df.distance != 0.0)
+        logger.info('Show performance explain')
+        self.__hive.print_perf_explain(self.__trips_dfs[k])
         logger.info("Processing trip data success: {}, lines={} ...".format(k, self.__trips_dfs[k].count()))
 
     def store_dw_to_hive(self, df, ptd, tmp_tb_name):
@@ -182,7 +187,7 @@ class TripController:
         # """
 
         crt_tb_sql = """
-                    create table IF NOT EXISTS SharedBike.trip_details like {} USING hive
+                    CREATE TABLE IF NOT EXISTS SharedBike.trip_details like {} USING hive
                 """.format(tmp_tb_name)  # PARTITIONED BY (ptd String)
 
         crt_tb_sql = """
@@ -201,7 +206,7 @@ class TripController:
 
         # self.__hive.exec_sql(''' create table SharedBike.trip_details like {} '''.format(tmp_tb_name))
         # self.__hive.exec_sql(''' insert overwrite table SharedBike.trip_details select * from {} '''.format(tmp_tb_name))
-        select_sql = '''select count(1) from SharedBike.trip_details where ptd="{partition}"'''.format(partition=ptd)
+        select_sql = '''SELECT count(1) FROM SharedBike.trip_details WHERE ptd="{partition}"'''.format(partition=ptd)
         cnt = self.__spark.sql(select_sql).collect()[0][0]
         logger.info('Import {} to hive success, ptd={} has {} data.'.format(tmp_tb_name, ptd, cnt))
 
@@ -241,7 +246,12 @@ class TripController:
         """
         trip_cnt_by_hour_tb_name = 'app_trip_cnt_by_hour'
         df = self.__spark.sql(trip_cnt_by_hour_sql)
-        self.__hive.exp_by_tb_name(trip_cnt_by_hour_tb_name, 'results/app/{}'.format(trip_cnt_by_hour_tb_name), df=df)
+        trip_by_hour_df = df.withColumn("hour_is_morning_evening", self.__udf_is_morning_or_evening("start_hour"))\
+            .withColumn("hour_is_noon", self.__udf_is_noon("start_hour"))\
+            .withColumn("hour_is_idle", self.__udf_is_idle("start_hour"))
+        logger.info('Show performance explain')
+        self.__hive.print_perf_explain(trip_by_hour_df)
+        self.__hive.exp_by_tb_name(trip_cnt_by_hour_tb_name, 'results/app/{}'.format(trip_cnt_by_hour_tb_name), df=trip_by_hour_df)
         logger.info('Generated app_trip_cnt_by_hour.')
 
     def print_schema(self, df):
@@ -270,17 +280,27 @@ class TripUdf:
 
     @staticmethod
     def format_time_to_datetime(time_str: str) -> TimestampType:
-        return TimeUtils.string_toDatetime(time_str, format_str="%m/%d/%Y %H:%M", is_check=False)
+        format_str = "%m/%d/%Y %H:%M" if len(time_str) < 17 else "%Y-%m-%d %H:%M:%S"
+        return TimeUtils.string_toDatetime(time_str, format_str=format_str, is_check=False)
 
     @staticmethod
     def format_time_to_hour_str(time_str):
-        ts = TimeUtils.string_toDatetime(time_str, format_str="%m/%d/%Y %H:%M", is_check=False)
+        format_str = "%m/%d/%Y %H:%M" if len(time_str) < 17 else "%Y-%m-%d %H:%M:%S"
+        ts = TimeUtils.string_toDatetime(time_str, format_str=format_str, is_check=False)
         return TimeUtils.datetime_toString(ts, format_str='%Y-%m-%d %H') + ':00:00'
+
+    @staticmethod
+    def split_date(date_str):
+        if '/' in date_str:
+            month_str, day_str, year_str = date_str.split('/')
+        else:
+            year_str, month_str, day_str = date_str.split('-')
+        return year_str, month_str, day_str
 
     @staticmethod
     def get_season(date_str: str) -> int:
         # Winter: 0, Spring: 1, Summer: 2, Fall: 3
-        month_str, day_str, year_str = date_str.split('/')
+        year_str, month_str, day_str = TripUdf.split_date(date_str)
         month, day, year = int(month_str), int(day_str), int(year_str)
         if month in [1, 2, 4, 5, 7, 8, 10, 11]:
             season = month / 3 + 1
@@ -294,12 +314,12 @@ class TripUdf:
 
     @staticmethod
     def get_holiday(date_str: str) -> int:
-        month_str, day_str, year_str = date_str.split('/')
+        year_str, month_str, day_str = TripUdf.split_date(date_str)
         return 1 if TimeUtils.is_usa_holiday(int(year_str), int(month_str), int(day_str)) else 0
 
     @staticmethod
     def get_workingday(date_str: str) -> int:
-        month_str, day_str, year_str = date_str.split('/')
+        year_str, month_str, day_str = TripUdf.split_date(date_str)
         if TimeUtils.is_business_day('{}-{}-{}'.format(year_str, month_str, day_str)) and \
             not TimeUtils.is_usa_holiday(int(year_str), int(month_str), int(day_str)):
             return 1
@@ -339,3 +359,15 @@ class TripUdf:
     def is_exist_in_multi_poly_by_shape(start_lon, start_lat, la_shape) -> str:
         is_exist = GeoUtils.within_shape(Point(start_lon, start_lat), la_shape)
         return 'LA' if is_exist[0] else 'UNKNOWN'
+
+    @staticmethod
+    def get_hour_mode(start_hour, mode):
+        if 6 <= start_hour <= 9:
+            return mode == 'MOE'
+        elif 16 <= start_hour <= 19:
+            return mode == 'MOE'
+        elif 11 <= start_hour <= 13:
+            return mode == 'NOON'
+        else:
+            return mode == 'IDLE'
+

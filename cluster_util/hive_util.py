@@ -54,4 +54,4 @@ class HiveUtil:
             logger.error('Export {} to csv error: {}'.format(tb_name, e))
 
     def print_perf_explain(self, df):
-        df.explain(True)
+        df.explain(extended=True)

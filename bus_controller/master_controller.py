@@ -1,4 +1,3 @@
-import sys
 import time, json
 
 from bus_controller.trip_controller import TripController
@@ -19,8 +18,6 @@ class MasterController:
         self.__geo_poly_set = dict()
         self.__poly_shape_set = dict()
         self.init_geo_poly_by_spark()
-        # res = GeoUtils.is_exist_in_multi_poly(-118.270813, 34.035679, self.__poly_shape_set['LA'])
-        # logger.info(res)
 
     def init_dw(self):
         self.__spark.sql('create database IF NOT EXISTS SharedBike')
