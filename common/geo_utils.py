@@ -1,6 +1,7 @@
 from math import radians, cos, sin, asin, sqrt
 from geopy.distance import geodesic
 from shapely.geometry import Point, asShape
+import geopandas as gpd
 from Logger import logger
 
 
@@ -36,6 +37,7 @@ class GeoUtils:
         point = Point(point_x, point_y)
         # import shapely.geometry
         # poly_shape = asShape(poly_context)
+
         is_exist = poly_shape.intersects(point)
 
         # poly_context = {'type': 'MULTIPOLYGON', 'coordinates': [[[[0, 0], [0, 2], [2, 2], [2, 0]]]]}
@@ -54,9 +56,22 @@ class GeoUtils:
         poly_shape = asShape(poly_context)
         return poly_shape
 
+    @staticmethod
+    def read_shape_file(file_path):
+        polys = gpd.read_file(file_path)
+        return polys
+
+    @staticmethod
+    def within_shape(df, shapes):
+        in_shape = list()
+        for sh in shapes.geometry:
+            within = df.within(sh)
+            in_shape.append(within)
+        return in_shape
+
 
 if __name__ == '__main__':
-    poly_context = {"type": "MultiPolygon",
+    poly_context_example = {"type": "MultiPolygon",
                     "coordinates":
                     [
                         [
@@ -79,5 +94,5 @@ if __name__ == '__main__':
                                 ]
                             ]]]}
     # poly_context = {'type': 'MULTIPOLYGON', 'coordinates': [[[[0, 0], [0, 2], [2, 2], [2, 0]]]]}
-    res = GeoUtils.is_exist_in_multi_poly(34.035679, -118.270813, poly_context)
-    print(res)
+    # res = GeoUtils.is_exist_in_multi_poly(34.035679, -118.270813, poly_context_example)
+    # print(res)

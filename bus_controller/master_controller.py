@@ -18,7 +18,7 @@ class MasterController:
         self.__trip_ctl = None
         self.__geo_poly_set = dict()
         self.__poly_shape_set = dict()
-        self.init_geo_poly()
+        self.init_geo_poly_by_spark()
         # res = GeoUtils.is_exist_in_multi_poly(-118.270813, 34.035679, self.__poly_shape_set['LA'])
         # logger.info(res)
 
@@ -65,12 +65,21 @@ class MasterController:
         # col_name = ['trip_route_type', 'passholder_type', 'bike_type', 'season', 'holiday', 'workingday']
         # ChartUtil.gen_histogram(self.__trip_ctl.trips_total_df, n=self.__trip_ctl.trips_total_df.count(), x=col_name)
 
-    def init_geo_poly(self):
+    def init_geo_poly_by_file(self):
         logger.info('Initiating geo poly ...')
         map_poly_path = 'map_poly_json'
         poly_file_name = 'US_LosAngeles_poly'
         file_context = FileUtils.imp_json_file(map_poly_path, poly_file_name, is_abs=True)
         poly_json = json.loads(file_context)
+        self.__geo_poly_set['LA'] = poly_json['records'][0]['fields']['geo_shape']  # ['coordinates']
+        self.__poly_shape_set['LA'] = GeoUtils.get_poly_shape(self.__geo_poly_set['LA'])
+
+    def init_geo_poly_by_spark(self):
+        logger.info('Initiating geo poly by spark ...')
+        map_poly_path = 'map_poly_json'
+        poly_file_name = 'US_LosAngeles_poly'
+        poly_rdd = self.__spark.read.json('{}/{}.json'.format(map_poly_path, poly_file_name))
+        poly_json = json.loads(poly_rdd.toJSON().collect()[0])
         self.__geo_poly_set['LA'] = poly_json['records'][0]['fields']['geo_shape']  # ['coordinates']
         self.__poly_shape_set['LA'] = GeoUtils.get_poly_shape(self.__geo_poly_set['LA'])
 

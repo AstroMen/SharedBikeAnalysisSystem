@@ -1,16 +1,19 @@
 import re
-
+from copy import deepcopy
 import matplotlib.pyplot as plt
 import pyspark.sql.dataframe
 import seaborn as sns
+from pyspark.sql.pandas.functions import pandas_udf, PandasUDFType
 from pyspark.sql.types import *
 from pyspark.sql.functions import udf
 # from pyspark.sql.functions import *
 from pyspark.sql import functions as pyspark_func
+
 from common.file_utils import FileUtils
 from common.time_utils import TimeUtils
 from common.geo_utils import GeoUtils
 from cluster_util.hive_util import HiveUtil
+from shapely.geometry import Point
 from Logger import logger
 
 
@@ -34,6 +37,9 @@ TRIP_SCHEMA = StructType([
     StructField('bike_type', StringType(), True),
 ])
 
+global_geo_poly_set = dict()
+global_poly_shape_set = dict()
+
 
 class TripController:
     def __init__(self, spark, hive, data_folder_name, geo_poly_set, poly_shape_set):
@@ -43,7 +49,16 @@ class TripController:
         self.__hive = hive
         self.__data_folder_name = data_folder_name
         self.__geo_poly_set = geo_poly_set
-        self.__poly_shape_set = poly_shape_set
+        global global_geo_poly_set
+        global_geo_poly_set = geo_poly_set
+        self.poly_shape_set = poly_shape_set
+        global global_poly_shape_set
+        global_poly_shape_set = poly_shape_set
+
+        logger.info('Reading shape file ...')
+        self.__geo_shape = GeoUtils.read_shape_file('geo_shape/us-county-boundaries.shp')
+        self.__la_shape = self.__geo_shape[self.__geo_shape["name"] == "Los Angeles"]
+
         self.init_udf()
 
         # Get data files name
@@ -57,7 +72,7 @@ class TripController:
         self.trips_total_df = self.__spark.createDataFrame(self.__spark.sparkContext.emptyRDD(), TRIP_SCHEMA
                                                            .add(StructField('distance', FloatType(), True))
                                                            .add(StructField('distance_cal', FloatType(), True))
-                                                           .add(StructField('city_name', FloatType(), True))
+                                                           .add(StructField('city_name', StringType(), True))
                                                            .add(StructField('used_date', StringType(), True))
                                                            .add(StructField('used_hour', IntegerType(), True))
                                                            .add(StructField('season', IntegerType(), True))
@@ -80,7 +95,17 @@ class TripController:
         self.__udf_get_workingday = udf(TripUdf.get_workingday, IntegerType())
         self.__udf_cal_dist_by_lat_lon = udf(TripUdf.cal_dist_by_lat_lon, FloatType())
         self.__udf_cal_dist_by_lat_lon_cal = udf(TripUdf.cal_dist_by_lat_lon_cal, FloatType())
-        self.__udf_get_city_name_by_coordinates = udf(lambda x, y: 'LA' if GeoUtils.is_exist_in_multi_poly(x, y, self.__poly_shape_set['LA']) else 'UNKNOWN', StringType())
+        # self.__udf_get_city_name_by_coordinates = udf(lambda x, y, p_shape: 'LA' if p_shape.intersects(Point(x, y)) else 'UNKNOWN', StringType())
+        self.__udf_get_city_name_by_coordinates = udf(lambda x, y, p_shape=self.__la_shape:
+                                                      TripUdf.is_exist_in_multi_poly_by_shape(x, y, p_shape), StringType())
+        # self.__udf_get_city_name_by_coordinates = udf(TripUdf.is_exist_in_multi_poly_test, StringType())
+        # self.__udf_get_city_name_by_coordinates = udf(lambda x, y, p_shape=poly_shape_set['LA']: TripUdf.is_exist_in_multi_poly(x, y, p_shape), StringType())
+        # self.__udf_get_city_name_by_coordinates = udf(lambda x, y: 'LA' if GeoUtils.test(x, y) else 'UNKNOWN', StringType())
+
+        # is_exist = poly_shape_set['LA'].intersects(Point(point_x, point_y))
+        # self.__udf_get_city_name_by_coordinates = udf(lambda x, y, p_shape=poly_shape_set['LA']: 'LA' if p_shape else 'UNKNOWN', StringType())
+        # self.__udf_get_city_name_by_coordinates = udf(lambda x, y, p_shape=poly_shape_set['LA']: 'LA' if p_shape.intersects(Point(x, y)) else 'UNKNOWN', StringType())
+        # self.__udf_get_city_name_by_coordinates = udf(lambda x, y: 'LA' if GeoUtils.is_exist_in_multi_poly(x, y, poly_shape_set['LA']) else 'UNKNOWN', StringType())
 
     def build_dw(self):
         logger.info("Building trip DW ...")
@@ -121,7 +146,7 @@ class TripController:
         self.__trips_dfs[k] = df.na.drop(subset=["start_lat", "start_lon", "end_lat", "end_lon"]) \
             .withColumn("distance", self.__udf_cal_dist_by_lat_lon("start_lat", "start_lon", "end_lat", "end_lon")) \
             .withColumn("distance_cal", self.__udf_cal_dist_by_lat_lon_cal("start_lat", "start_lon", "end_lat", "end_lon")) \
-            .withColumn("city_name", self.__udf_get_city_name_by_coordinates("start_lon", "start_lat")) \
+            .withColumn("city_name", self.__udf_get_city_name_by_coordinates("start_lon", "end_lat")) \
             .withColumn("used_date", self.__udf_get_date("start_time")) \
             .withColumn("used_hour", self.__udf_get_hour("start_time")) \
             .withColumn("season", self.__udf_get_season("used_date")) \
@@ -135,8 +160,9 @@ class TripController:
                         .when(df.passholder_type == 'Monthly Pass', 3).when(df.passholder_type == 'Annual Pass', 4)) \
             .withColumn("bike_type", pyspark_func.when(df.bike_type == 'standard', 1).when(df.bike_type == 'electric', 2)
                         .when(df.bike_type == 'smart', 3)) \
-            .withColumnRenamed('trip_route_category', 'trip_route_type').drop('start_time').drop('end_time')
-        # .withColumn("used_time", self.__udf_get_used_time("start_datetime", "end_datetime")) \
+            .withColumnRenamed('trip_route_category', 'trip_route_type')\
+            .drop('start_time').drop('end_time')
+
         # .filter("distance != 0.0") \  ### cannot filter because round-trip have the same start and end stations
         # .cast(DateType()) # .drop('col_name') # .filter(df.distance != 0.0)
         logger.info("Processing trip data success: {}, lines={} ...".format(k, self.__trips_dfs[k].count()))
@@ -160,11 +186,11 @@ class TripController:
                 """.format(tmp_tb_name)  # PARTITIONED BY (ptd String)
 
         crt_tb_sql = """
-        CREATE TABLE IF NOT EXISTS SharedBike.trip_details (trip_id int, duration int, start_station int, start_lat double, 
-        start_lon double, end_station int, end_lat double, end_lon double, bike_id int, plan_duration int, trip_route_type int, 
-        passholder_type int, bike_type int, distance float, distance_cal float, used_date string, used_hour int,
-        season int, holiday int, workingday int, start_datetime timestamp, end_datetime timestamp, start_hour string)
-        PARTITIONED BY (ptd String)
+            CREATE TABLE IF NOT EXISTS SharedBike.trip_details (trip_id int, duration int, start_station int, start_lat double, 
+            start_lon double, end_station int, end_lat double, end_lon double, bike_id int, plan_duration int, trip_route_type int, 
+            passholder_type int, bike_type int, distance float, distance_cal float, city_name string, used_date string, used_hour int,
+            season int, holiday int, workingday int, start_datetime timestamp, end_datetime timestamp, start_hour string)
+            PARTITIONED BY (ptd String)
         """
         self.__spark.sql(crt_tb_sql)
 
@@ -210,6 +236,7 @@ class TripController:
                 MAX(holiday) as holiday,
                 MAX(workingday) as workingday
               from SharedBike.trip_details
+              where city_name = 'LA'
               group by start_hour ORDER BY start_hour;
         """
         trip_cnt_by_hour_tb_name = 'app_trip_cnt_by_hour'
@@ -292,3 +319,23 @@ class TripUdf:
             print('Func cal_dist_by_lat_lon_cal: params None, lat1={}, lon1={}, lat2={}, lon2={}'.format(lat1, lon1, lat2, lon2))
             return 0.0
         return GeoUtils.get_distance_by_lng_lat_cal(lat1, lon1, lat2, lon2)
+
+    @staticmethod
+    def is_exist_in_multi_poly(p_shape):
+        print(type(p_shape))  # <class 'shapely.geometry.multipolygon.MultiPolygonAdapter'>
+        # logger.info('is_exist_in_multi_poly ...')
+
+        def process(x, y, p_shape):
+            return 'LA' if p_shape.intersects(Point(x, y)) else 'UNKNOWN'
+        return pyspark_func.udf(lambda x, y: process(x, y, p_shape))
+
+    @staticmethod
+    def is_exist_in_multi_poly_test(start_lon: float, start_lat: float) -> str:
+        # poly_shape = GeoUtils.get_poly_shape(global_geo_poly_set['LA'])
+        is_exist = GeoUtils.is_exist_in_multi_poly(start_lon, start_lat, global_poly_shape_set['LA'])
+        return 'LA' if is_exist else 'UNKNOWN'
+
+    @staticmethod
+    def is_exist_in_multi_poly_by_shape(start_lon, start_lat, la_shape) -> str:
+        is_exist = GeoUtils.within_shape(Point(start_lon, start_lat), la_shape)
+        return 'LA' if is_exist[0] else 'UNKNOWN'
