@@ -49,7 +49,7 @@ class HiveUtil:
             if FileUtils.path_exists(export_csv_path):
                 FileUtils.remove_folder(export_csv_path)
             df = self.__spark.sql('select * from {};'.format(tb_name)) if df is None else df
-            df.repartition(partition_cnt).write.csv(export_csv_path, encoding="utf-8", header=True)
+            df.repartition(partition_cnt).write.option('maxRecordsPerFile', 200000).csv(export_csv_path, encoding="utf-8", header=True)
         except pyspark.sql.utils.AnalysisException as e:
             logger.error('Export {} to csv error: {}'.format(tb_name, e))
 
