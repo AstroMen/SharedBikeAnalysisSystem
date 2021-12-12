@@ -12,7 +12,7 @@ from Logger import logger
 __MODULEID__ = "{9690551b-43d2-41d1-96ed-131e9b1aedef}"
 __VERSION__ = '1.0.0'
 __AUTHOR__ = 'menluyao'
-# __all__ = ['start_dw_engine']
+# __all__ = ['method']
 
 
 # Press the green button in the gutter to run the script.
