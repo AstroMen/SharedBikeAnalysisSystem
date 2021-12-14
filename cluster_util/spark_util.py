@@ -14,14 +14,14 @@ class SparkUtil:
         self.__scontext = None
         self.__ssession = None
 
-    def __build_spark_conf(self, conn="local") -> SparkConf:
+    def __build_spark_conf(self, conn="local"):
         self.__sconf = SparkConf()\
             .set("spark.executor.memory", "2g")\
             .set("spark.driver.allowMultipleContexts", "false")\
             .set("spark.ui.enabled", "true")\
             .setMaster(conn)
 
-    def build_spark_session(self, app_name: str) -> SparkSession:
+    def build_spark_session(self, app_name):
         logger.info('Build spark session ...')
         self.__build_spark_conf()
         self.__ssession = SparkSession.builder\
@@ -33,7 +33,7 @@ class SparkUtil:
         self.__ssession.sparkContext.setLogLevel("ERROR")
         return self.__ssession
 
-    def build_spark_context(self, is_local=True, thread=1, is_standalone=False, host=None, port=0) -> SparkContext:
+    def build_spark_context(self, is_local=True, thread=1, is_standalone=False, host=None, port=0):
         logger.info('Build spark context ...')
         conn = "local[{}]".format(thread) if is_local and not is_standalone else "spark://{}:{}".format(host, port)
         print(conn)

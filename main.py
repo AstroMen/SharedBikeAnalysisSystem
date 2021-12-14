@@ -1,8 +1,4 @@
-# This is a sample Python script.
-
-# Press ⌃R to execute it or replace it with your code.
-# Press Double ⇧ to search everywhere for classes, files, tool windows, actions, and settings.
-import re
+#!/usr/bin/python
 from cluster_util.spark_util import SparkUtil
 from cluster_util.hive_util import HiveUtil
 from bus_controller.master_controller import MasterController
