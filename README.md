@@ -10,6 +10,7 @@ The Shared Bike Analysis System is designed to process and analyze shared bike u
 - [Installation](#installation)
 - [Usage](#usage)
 - [Troubleshooting](#troubleshooting)
+- [Project Report](#project-report)
 - [Additional Information](#additional-information)
 
 ## Environment Setup
@@ -104,6 +105,18 @@ If you encounter issues, please check the following potential solutions:
 4. If you're having trouble with Hive, try deleting `db.lck` and `dbex.lck` in the `metastore_db` directory.
 
 5. For other issues, please submit them [here](https://github.com/AstroMen/SharedBikeAnalysisSystem/issues).
+
+## Project Report
+
+The detailed report for this project is provided in "ANALYSIS OF SHARED BICYCLE OPERATION.pdf". It includes a comprehensive overview of the entire project, covering the following sections:
+
+- Introduction
+- Preprocessing
+- Analytical Framework
+- System Design
+- Evaluation
+- Related Research
+- Conclusion
 
 ## Additional Information
 
