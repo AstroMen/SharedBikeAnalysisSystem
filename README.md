@@ -1,7 +1,8 @@
 
 # Shared Bike Analysis System
 
-The Shared Bike Analysis System is designed to process and analyze shared bike usage data. The system requires Python 3 and Java 8 (due to Spark's dependency). It includes a variety of tools and services such as Apache Spark, Hadoop, Scala, and more.
+The Shared Bike Analysis System aims to optimize the deployment and pricing strategies of shared bikes. Through the analysis of user usage data, recommendations are made for the strategic placement of bikes at high-demand times and locations. Additionally, pricing adjustments are suggested based on the usage patterns of different bike types and membership categories.  
+The system requires Python 3 and Java 8 (due to Spark's dependency). It includes a variety of tools and services such as Apache Spark, Hadoop, Scala, and more.
 
 ## Table of Contents
 
