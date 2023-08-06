@@ -14,7 +14,7 @@ The Shared Bike Analysis System is designed to process and analyze shared bike u
 
 ## Environment Setup
 
-The project's main script is `main.py`, and Jupyter Notebook visualization is provided via `test.ipynb`. 
+The project's main script is `main.py`, and Jupyter Notebook visualization is provided via `analysis.ipynb`. 
 
 **Note:** Spark only supports Java 8 (not JDK 11).
 
@@ -84,7 +84,7 @@ To start the visualization tool, use:
 flask run --host=0.0.0.0 --port=5000
 ```
 
-Then, access it in your browser at: `http://0.0.0.0:8888/notebooks/test.ipynb`
+Then, access it in your browser at: `http://0.0.0.0:8888/notebooks/analysis.ipynb`
 
 ## Troubleshooting
 
