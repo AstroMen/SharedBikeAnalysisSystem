@@ -60,6 +60,11 @@ Install the `virtualenv` package using pip:
 pip install virtualenv
 ```
 
+Install the jupyter notebook:
+```shell
+pip install jupyter
+```
+
 ## Usage
 
 ### Python Virtual Environment
@@ -79,6 +84,12 @@ spark-submit main.py
 ```
 
 ### Visualization
+
+To start jupyter notebook:
+
+```shell
+jupyter notebook
+```
 
 To start the visualization tool, use: 
 
