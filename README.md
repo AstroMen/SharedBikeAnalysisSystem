@@ -6,6 +6,8 @@ The system requires Python 3 and Java 8 (due to Spark's dependency). It includes
 
 ## Table of Contents
 
+- [System Overview](#system-overview)
+- [Functional Modules](#functional-modules)
 - [Environment Setup](#environment-setup)
 - [Data Source](#data-source)
 - [Installation](#installation)
@@ -13,6 +15,45 @@ The system requires Python 3 and Java 8 (due to Spark's dependency). It includes
 - [Troubleshooting](#troubleshooting)
 - [Project Report](#project-report)
 - [Additional Information](#additional-information)
+
+## System Overview
+
+The Shared Bike Analysis System is built on **PySpark + Hive** and delivers a complete workflow around Metro Bike Share historical trip data, covering data ingestion, cleaning, data warehouse construction, statistical analysis, and result export. The system aims to **improve bike dispatch efficiency and optimize operational strategy**, with emphasis on the following business questions:
+
+- How demand changes across different time periods (hourly granularity);
+- Usage distribution across trip route types, passholder types, and bike types;
+- Spatial characteristics of riding behavior within the city area (LA);
+- Structured outputs for downstream visualization and operations decision-making.
+
+The main execution starts in `main.py`: after Spark/Hive session initialization, `MasterController` orchestrates data warehouse setup, trip data processing, statistics, and application-layer metric generation.  
+
+## Functional Modules
+
+### 1) Compute and Storage Foundation (`cluster_util`)
+
+- `spark_util.py`: builds SparkSession / SparkContext and manages runtime parameters;
+- `hive_util.py`: manages Hive tables/partitions, executes SQL, and exports results.
+
+### 2) Business Orchestration (`bus_controller`)
+
+- `master_controller.py`: acts as the system orchestrator for data warehouse initialization, primary processing flow, statistics jobs, and resource cleanup;
+- `trip_controller.py`: handles trip-domain processing including raw CSV ingestion, field cleaning, UDF-based feature engineering, partitioned warehousing, and application-layer aggregation.
+
+### 3) Shared Utilities (`common`)
+
+- Provides common capabilities such as file operations, time utilities, geospatial tools, JSON handling, and logging;
+- Supports trip data normalization, geolocation checks from lat/lon, and business feature computation.
+
+### 4) Statistics & Visualization Helpers (`statistics_utils`)
+
+- `chart_util.py` provides statistical plotting utilities based on Matplotlib/Seaborn;
+- Enables quick visual exploration of analysis results (e.g., count distributions).
+
+### 5) Data and Outputs
+
+- `data/`: stores raw quarterly Metro Bike Share datasets;
+- `map_poly_json/` and `geo_shape/`: store geographic boundary data for region checks (e.g., LA area);
+- `results/`: stores statistical outputs and charts (e.g., correlation matrix, clustering figures).
 
 ## Environment Setup
 
